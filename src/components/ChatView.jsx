@@ -39,9 +39,9 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.5.6', detail: 'UI Fix: Restored Send Icon visibility.' },
     { v: '1.5.5', detail: 'Force Cache Clear & Auto-Reload.' },
-    { v: '1.5.4', detail: 'Mobile UI Fix: Input overlap & Asset Path Clean.' },
-    { v: '1.5.3', detail: 'Bug Fix: Profile Persistence Restore.' }
+    { v: '1.5.4', detail: 'Mobile UI Fix: Input overlap & Asset Path Clean.' }
   ];
 
   const currentVersion = '1.5.5';
@@ -253,7 +253,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.5</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.6</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
@@ -291,7 +291,7 @@ const ChatView = () => {
 
         <form className="chat-input-area" onSubmit={handleSend}>
           <input type="text" placeholder="Ketik..." value={message} onChange={e => setMessage(e.target.value)} />
-          <button type="submit" className="send-btn"><SendIcon /></button>
+          <button type="submit" className="send-btn"><SendIcon className="btn-icon-svg" /></button>
         </form>
       </main>
 
