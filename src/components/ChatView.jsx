@@ -39,9 +39,9 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.5.7', detail: 'Feature Restore: Chat Deletion (Me/Everyone).' },
     { v: '1.5.6', detail: 'UI Fix: Restored Send Icon visibility.' },
-    { v: '1.5.5', detail: 'Force Cache Clear & Auto-Reload.' },
-    { v: '1.5.4', detail: 'Mobile UI Fix: Input overlap & Asset Path Clean.' }
+    { v: '1.5.5', detail: 'Force Cache Clear & Auto-Reload.' }
   ];
 
   const currentVersion = '1.5.5';
@@ -168,6 +168,14 @@ const ChatView = () => {
     if (list.length > 0) await supabase.from('messages').update({ status: 'read' }).in('id', list);
   };
 
+  const handleDeleteForMe = (id) => setDeletedIds(prev => [...prev, id]);
+
+  const handleDeleteForEveryone = async (id) => {
+    if (window.confirm('Hapus untuk semua orang?')) {
+      await supabase.from('messages').delete().eq('id', id);
+    }
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!message.trim() || !activeContactId) return;
@@ -253,7 +261,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.6</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.7</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
@@ -281,6 +289,10 @@ const ChatView = () => {
                         {msg.status === 'sent' ? <SingleCheckIcon /> : (msg.status === 'read' ? <DoubleCheckIcon className="read" /> : <DoubleCheckIcon />)}
                       </span>
                     )}
+                  </div>
+                  <div className="message-actions">
+                    <button className="action-btn" onClick={() => handleDeleteForMe(msg.id)}>Hapus Saya</button>
+                    {msg.sender_id === myProfile.uniqueId && <button className="action-btn delete" onClick={() => handleDeleteForEveryone(msg.id)}>Hapus Semua</button>}
                   </div>
                 </div>
               </div>
