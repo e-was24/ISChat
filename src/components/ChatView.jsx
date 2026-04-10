@@ -32,9 +32,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.3.9', detail: 'Real-Time Diagnostic & Sync Optimization.' },
     { v: '1.3.8', detail: 'Real Read Status (Bulk Update) & Sync Fix.' },
-    { v: '1.3.7', detail: 'Real-Time Fix: Standardized ID Format.' },
-    { v: '1.3.6', detail: 'Default view: Kontak (all devices).' }
+    { v: '1.3.7', detail: 'Real-Time Fix: Standardized ID Format.' }
   ];
 
   // Auto-scroll to bottom
@@ -90,15 +90,20 @@ const ChatView = () => {
     const channel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
+        console.log('Real-time payload received:', payload);
         if (payload.eventType === 'INSERT') {
           const newMsg = payload.new;
-          if (newMsg.receiver_id === myProfile.uniqueId || newMsg.sender_id === myProfile.uniqueId) {
+          // IMPORTANT: Check canonical equality
+          const isForMe = newMsg.receiver_id === myProfile.uniqueId;
+          const isFromMe = newMsg.sender_id === myProfile.uniqueId;
+
+          if (isForMe || isFromMe) {
             setMessages(prev => {
               if (prev.find(m => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
             });
             // Auto mark as read if active
-            if (newMsg.receiver_id === myProfile.uniqueId && newMsg.sender_id === activeContactId) {
+            if (isForMe && newMsg.sender_id === activeContactId) {
               markAsRead(newMsg.id);
             }
           }
@@ -108,7 +113,12 @@ const ChatView = () => {
           setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Supabase Real-time status:', status);
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Real-time connection error. Check Supabase settings.');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -248,7 +258,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.3.8</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.3.9</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
