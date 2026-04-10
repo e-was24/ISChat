@@ -39,12 +39,12 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.5.8', detail: 'Local Cache & Persistence (WhatsApp style).' },
     { v: '1.5.7', detail: 'Feature Restore: Chat Deletion (Me/Everyone).' },
-    { v: '1.5.6', detail: 'UI Fix: Restored Send Icon visibility.' },
-    { v: '1.5.5', detail: 'Force Cache Clear & Auto-Reload.' }
+    { v: '1.5.6', detail: 'UI Fix: Restored Send Icon visibility.' }
   ];
 
-  const currentVersion = '1.5.5';
+  const currentVersion = '1.5.8';
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -79,19 +79,38 @@ const ChatView = () => {
   useEffect(() => {
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
+    const savedIds = db.getDeletedMessages();
     setMyProfile(profile);
     setContacts(savedContacts.map(c => ({ ...c, id: canonicalPhone(c.id) })));
-    setDeletedIds(db.getDeletedMessages());
+    setDeletedIds(savedIds);
+    setMessages(db.getMessages()); // Load from cache instantly
     if (savedContacts.length > 0) setActiveContactId(savedContacts[0].id);
   }, []);
 
   useEffect(() => { if (contacts.length > 0) db.saveContacts(contacts); }, [contacts]);
   useEffect(() => { db.saveDeletedMessages(deletedIds); }, [deletedIds]);
   useEffect(() => { db.saveProfile(myProfile); }, [myProfile]);
+  useEffect(() => { db.saveMessages(messages); }, [messages]); // Save messages to cache
 
   // Presence & Messages logic
   useEffect(() => {
     if (!myProfile.uniqueId) return;
+
+    // Initial Fetch & Merge
+    const fetchMessages = async () => {
+      const { data } = await supabase.from('messages')
+        .select('*')
+        .or(`sender_id.eq.${myProfile.uniqueId},receiver_id.eq.${myProfile.uniqueId}`)
+        .order('created_at', { ascending: true });
+      if (data) {
+        setMessages(prev => {
+          const map = new Map(prev.map(m => [m.id, m]));
+          data.forEach(m => map.set(m.id, m)); // Merge cloud data
+          return Array.from(map.values()).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+        });
+      }
+    };
+    fetchMessages();
 
     // Presence Channel
     const presenceChannel = supabase.channel('online-presence', {
@@ -261,7 +280,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.7</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.8</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
