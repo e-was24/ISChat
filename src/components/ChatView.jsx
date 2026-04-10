@@ -33,9 +33,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.5.0', detail: 'Auto-Contact Creation from Incoming Messages.' },
     { v: '1.4.4', detail: 'Unread Indicators & Robust Filtering.' },
-    { v: '1.4.3', detail: 'Live Diagnostics Overlay & Connection Check.' },
-    { v: '1.4.2', detail: 'Final Stable: Production Cleanup.' }
+    { v: '1.4.3', detail: 'Live Diagnostics Overlay & Connection Check.' }
   ];
 
   // Auto-scroll to bottom
@@ -108,6 +108,23 @@ const ChatView = () => {
               if (prev.find(m => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
             });
+
+            // AUTO-CONTACT CREATION: If isForMe and sender not in contact list
+            if (isForMe) {
+              setContacts(prev => {
+                const alreadyExists = prev.some(c => cleanPhone(c.id) === txCleanId);
+                if (!alreadyExists) {
+                  return [...prev, {
+                    id: canonicalPhone(newMsg.sender_id),
+                    name: formatPhoneInput(newMsg.sender_id),
+                    avatar: '?',
+                    status: 'Tersimpan Otomatis'
+                  }];
+                }
+                return prev;
+              });
+            }
+
             if (isForMe && txCleanId === activeCleanId) {
               markAsRead(newMsg.id);
             }
@@ -274,7 +291,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.4.4</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.5.0</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
@@ -382,7 +399,7 @@ const ChatView = () => {
             </div>
             
             <div className="diag-box">
-              <p>Diagnostic v1.4.3:</p>
+              <p>Diagnostic v1.5.0:</p>
               <code>Last Event: {lastPayload ? lastPayload.eventType : 'None'}</code>
               {lastPayload && lastPayload.new && (
                 <code>Rx: {cleanPhone(lastPayload.new.receiver_id)} | Tx: {cleanPhone(lastPayload.new.sender_id)}</code>

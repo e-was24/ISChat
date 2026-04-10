@@ -257,7 +257,24 @@ h1 {
   opacity: 1;
 }
 
-.avatar { width: 40px; height: 40px; border-radius: 12px; background: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
+.avatar { width: 40px; height: 40px; border-radius: 12px; background: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; position: relative; }
+.unread-dot {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: #ff5252;
+  color: white;
+  font-size: 0.65rem;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #24243e;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(255, 82, 82, 0.4);
+}
 .avatar-large { width: 80px; height: 80px; border-radius: 20px; background: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; margin: 0 auto 1.5rem; }
 
 .sidebar-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; }
