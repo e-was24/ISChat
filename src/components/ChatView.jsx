@@ -32,9 +32,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.4.0', detail: 'Advanced Real-Time Debugging & RLS Fix.' },
     { v: '1.3.9', detail: 'Real-Time Diagnostic & Sync Optimization.' },
-    { v: '1.3.8', detail: 'Real Read Status (Bulk Update) & Sync Fix.' },
-    { v: '1.3.7', detail: 'Real-Time Fix: Standardized ID Format.' }
+    { v: '1.3.8', detail: 'Real Read Status (Bulk Update) & Sync Fix.' }
   ];
 
   // Auto-scroll to bottom
@@ -90,12 +90,13 @@ const ChatView = () => {
     const channel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
-        console.log('Real-time payload received:', payload);
+        console.log('DEBUG: Full Real-time payload:', payload);
         if (payload.eventType === 'INSERT') {
           const newMsg = payload.new;
-          // IMPORTANT: Check canonical equality
           const isForMe = newMsg.receiver_id === myProfile.uniqueId;
           const isFromMe = newMsg.sender_id === myProfile.uniqueId;
+          
+          console.log(`DEBUG: Filter Check - ForMe: ${isForMe}, FromMe: ${isFromMe}, MyID: ${myProfile.uniqueId}, RxID: ${newMsg.receiver_id}`);
 
           if (isForMe || isFromMe) {
             setMessages(prev => {
@@ -258,7 +259,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.3.9</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.4.0</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
