@@ -33,9 +33,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.4.4', detail: 'Unread Indicators & Robust Filtering.' },
     { v: '1.4.3', detail: 'Live Diagnostics Overlay & Connection Check.' },
-    { v: '1.4.2', detail: 'Final Stable: Production Cleanup.' },
-    { v: '1.4.1', detail: 'Zero-Format Dependency Sync (Robust IDs).' }
+    { v: '1.4.2', detail: 'Final Stable: Production Cleanup.' }
   ];
 
   // Auto-scroll to bottom
@@ -201,14 +201,17 @@ const ChatView = () => {
     }
   };
 
-  const activeContact = contacts.find(c => c.id === activeContactId) || { avatar: '?', id: '' };
+  const activeContact = contacts.find(c => cleanPhone(c.id) === cleanPhone(activeContactId)) || { avatar: '?', id: '' };
   
   // Filter messages: matches current chat AND NOT deleted for me
   const getDisplayMessages = () => {
+    const myId = cleanPhone(myProfile.uniqueId);
+    const activeId = cleanPhone(activeContactId);
+    
     return messages.filter(m => 
       !deletedIds.includes(m.id) &&
-      ((m.sender_id === myProfile.uniqueId && m.receiver_id === activeContactId) ||
-      (m.sender_id === activeContactId && m.receiver_id === myProfile.uniqueId))
+      ((cleanPhone(m.sender_id) === myId && cleanPhone(m.receiver_id) === activeId) ||
+      (cleanPhone(m.sender_id) === activeId && cleanPhone(m.receiver_id) === myId))
     );
   };
 
@@ -242,23 +245,36 @@ const ChatView = () => {
         </div>
         
         <div className="contact-list">
-          {contacts.map((contact) => (
-            <div key={contact.id} className={`contact-item ${activeContactId === contact.id ? 'active' : ''}`} onClick={() => { setActiveContactId(contact.id); if (window.innerWidth <= 768) setMobileView('messages'); }}>
-              <div className="avatar">{contact.avatar}</div>
-              <div className="contact-info">
-                <h4>{formatPhoneInput(contact.id)}</h4>
-                <p>{contact.status}</p>
+          {contacts.map((contact) => {
+            const contactCleanId = cleanPhone(contact.id);
+            const myCleanId = cleanPhone(myProfile.uniqueId);
+            const unreadCount = messages.filter(m => 
+              cleanPhone(m.sender_id) === contactCleanId && 
+              cleanPhone(m.receiver_id) === myCleanId && 
+              m.status !== 'read'
+            ).length;
+
+            return (
+              <div key={contact.id} className={`contact-item ${activeContactId === contact.id ? 'active' : ''}`} onClick={() => { setActiveContactId(contact.id); if (window.innerWidth <= 768) setMobileView('messages'); }}>
+                <div className="avatar">
+                  {contact.avatar}
+                  {unreadCount > 0 && <span className="unread-dot">{unreadCount}</span>}
+                </div>
+                <div className="contact-info">
+                  <h4>{formatPhoneInput(contact.id)}</h4>
+                  <p>{contact.status}</p>
+                </div>
+                <button className="delete-contact-btn" onClick={(e) => { e.stopPropagation(); handleDeleteContact(contact.id); }}>
+                  <TrashIcon className="sidebar-icon" />
+                </button>
               </div>
-              <button className="delete-contact-btn" onClick={(e) => { e.stopPropagation(); handleDeleteContact(contact.id); }}>
-                <TrashIcon className="sidebar-icon" />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.4.3</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.4.4</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
