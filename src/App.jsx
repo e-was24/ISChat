@@ -63,9 +63,9 @@ function App() {
         <div className="reload-toast">
           <div className="message">
             {offlineReady ? (
-              <span>Aplikasi siap digunakan secara offline!</span>
+              <span>Aplikasi siap di-install & akses cepat aktif! 🚀</span>
             ) : (
-              <span>Konten baru tersedia, klik tombol untuk update.</span>
+              <span>Fitur baru tersedia, segera update! ⚡</span>
             )}
           </div>
           {needRefresh && (

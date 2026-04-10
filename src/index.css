@@ -24,6 +24,10 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   display: flex;
@@ -37,7 +41,7 @@ body {
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: clamp(1rem, 5vw, 2rem);
   text-align: center;
 }
 
@@ -46,25 +50,23 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
-  border-radius: 24px;
-  padding: 3rem;
+  border-radius: clamp(24px, 5vw, 40px);
+  padding: clamp(2rem, 8vw, 4rem);
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   display: flex;
   flex-direction: column;
   align-items: center;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.glass-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 12px 48px 0 rgba(0, 0, 0, 0.5);
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .logo-container {
-  width: 100px;
-  height: 100px;
+  width: clamp(80px, 15vw, 100px);
+  height: clamp(80px, 15vw, 100px);
   margin-bottom: 2rem;
-  padding: 1.5rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 28px;
@@ -82,7 +84,7 @@ body {
 }
 
 h1 {
-  font-size: 3.5rem;
+  font-size: clamp(2rem, 8vw, 3.5rem);
   font-weight: 800;
   line-height: 1.1;
   margin-bottom: 1rem;
@@ -93,7 +95,7 @@ h1 {
 }
 
 .tagline {
-  font-size: 1.25rem;
+  font-size: clamp(1rem, 3vw, 1.25rem);
   color: var(--text-secondary);
   max-width: 600px;
   margin: 0 auto 2.5rem;
@@ -101,12 +103,15 @@ h1 {
 
 .cta-group {
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   margin-bottom: 3rem;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .btn {
-  padding: 1rem 2.5rem;
+  padding: 1rem 2rem;
   border-radius: 14px;
   font-size: 1rem;
   font-weight: 600;
@@ -115,7 +120,9 @@ h1 {
   border: none;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
+  min-width: 180px;
 }
 
 .btn-primary {
@@ -125,7 +132,7 @@ h1 {
 
 .btn-primary:hover {
   background: var(--primary-dark);
-  transform: scale(1.05);
+  transform: translateY(-2px);
 }
 
 .btn-secondary {
@@ -136,6 +143,7 @@ h1 {
 
 .btn-secondary:hover {
   background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
 }
 
 .btn-icon-svg {
@@ -146,10 +154,10 @@ h1 {
 
 .features-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
   width: 100%;
-  margin-top: 4rem;
+  margin-top: 3rem;
 }
 
 .feature-item {
@@ -158,19 +166,22 @@ h1 {
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.05);
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .feature-svg {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 1.5rem;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 1.25rem;
   color: var(--primary-light);
   display: block;
 }
 
 .feature-item h3 {
   margin: 0 0 0.5rem;
-  font-size: 1.25rem;
+  font-size: 1.1rem;
 }
 
 .feature-item p {
@@ -182,26 +193,29 @@ h1 {
 .reload-toast {
   position: fixed;
   bottom: 2rem;
-  right: 2rem;
-  background: #fff;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ffffff;
   color: #000;
   padding: 1rem 1.5rem;
-  border-radius: 12px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   gap: 1rem;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
   z-index: 1000;
-  animation: slideUp 0.5s ease-out;
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  width: calc(100% - 2rem);
+  max-width: 400px;
 }
 
 @keyframes slideUp {
-  from { transform: translateY(100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: translate(-50%, 100%); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
 }
 
-@media (max-width: 768px) {
-  h1 { font-size: 2.5rem; }
-  .cta-group { flex-direction: column; width: 100%; }
-  .btn { width: 100%; justify-content: center; }
+@media (max-width: 480px) {
+  .btn { width: 100%; }
+  .feature-item { align-items: center; text-align: center; }
+  .feature-svg { margin-left: auto; margin-right: auto; }
 }
