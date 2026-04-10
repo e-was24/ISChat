@@ -29,12 +29,13 @@ const ChatView = () => {
   const [activeContactId, setActiveContactId] = useState('');
   const [messages, setMessages] = useState([]);
   const [deletedIds, setDeletedIds] = useState([]);
+  const [lastPayload, setLastPayload] = useState(null); // Diagnostic
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.4.3', detail: 'Live Diagnostics Overlay & Connection Check.' },
     { v: '1.4.2', detail: 'Final Stable: Production Cleanup.' },
-    { v: '1.4.1', detail: 'Zero-Format Dependency Sync (Robust IDs).' },
-    { v: '1.4.0', detail: 'Advanced Real-Time Debugging & RLS Fix.' }
+    { v: '1.4.1', detail: 'Zero-Format Dependency Sync (Robust IDs).' }
   ];
 
   // Auto-scroll to bottom
@@ -90,6 +91,7 @@ const ChatView = () => {
     const channel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
+        setLastPayload(payload); // Store for UI diagnostic
         if (payload.eventType === 'INSERT') {
           const newMsg = payload.new;
           
@@ -256,7 +258,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.4.2</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.4.3</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
@@ -352,7 +354,7 @@ const ChatView = () => {
             <div className="profile-header">
               <div className="avatar-large">{myProfile.name ? myProfile.name.charAt(0) : 'P'}</div>
               <h3>{myProfile.name}</h3>
-              <p>{myProfile.status}</p>
+              <p>{myProfile.status} | ID: {cleanPhone(myProfile.uniqueId)}</p>
             </div>
             <div className="unique-id-box">
               <label>Nomor Unik Anda</label>
@@ -362,6 +364,15 @@ const ChatView = () => {
               </div>
               <p className="note">Gunakan nomor ini untuk chat real-time via Supabase.</p>
             </div>
+            
+            <div className="diag-box">
+              <p>Diagnostic v1.4.3:</p>
+              <code>Last Event: {lastPayload ? lastPayload.eventType : 'None'}</code>
+              {lastPayload && lastPayload.new && (
+                <code>Rx: {cleanPhone(lastPayload.new.receiver_id)} | Tx: {cleanPhone(lastPayload.new.sender_id)}</code>
+              )}
+            </div>
+
             <button className="btn btn-primary" onClick={() => setShowProfileModal(false)}>Kembali</button>
           </div>
         </div>
