@@ -8,7 +8,9 @@ import {
   UserPlusIcon, 
   UserIcon, 
   MessageSquareIcon, 
-  UsersIcon 
+  UsersIcon,
+  SingleCheckIcon,
+  DoubleCheckIcon
 } from './Icons';
 import { db } from '../utils/db';
 
@@ -25,27 +27,21 @@ const ChatView = () => {
   const [messages, setMessages] = useState([]);
 
   const versionHistory = [
+    { v: '1.3.1', detail: 'Message Status Indicators (Checkmarks) & Supabase Ready.' },
     { v: '1.3.0', detail: 'Data Persistence (DB), Fix Send Icon, & Unique User Numbers.' },
-    { v: '1.2.0', detail: 'Fitur Profil, Nomor Unik, & Bottom Navigation (Mobile).' },
-    { v: '1.1.1', detail: 'Fitur Tambah Kontak & Manajemen Nomor.' }
+    { v: '1.2.0', detail: 'Fitur Profil, Nomor Unik, & Bottom Navigation (Mobile).' }
   ];
 
-  // Load initial data from DB
   useEffect(() => {
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
     const savedMessages = db.getMessages();
-    
     setMyProfile(profile);
     setContacts(savedContacts);
     setMessages(savedMessages);
-    
-    if (savedContacts.length > 0) {
-      setActiveContactId(savedContacts[0].id);
-    }
+    if (savedContacts.length > 0) setActiveContactId(savedContacts[0].id);
   }, []);
 
-  // Save data to DB whenever it changes
   useEffect(() => {
     if (contacts.length > 0) db.saveContacts(contacts);
   }, [contacts]);
@@ -58,31 +54,51 @@ const ChatView = () => {
     e.preventDefault();
     if (!message.trim()) return;
     
-    const newMsg = { id: Date.now(), text: message, sender: 'user', contactId: activeContactId, timestamp: new Date().toISOString() };
+    const msgId = Date.now();
+    const newMsg = { 
+      id: msgId, 
+      text: message, 
+      sender: 'user', 
+      contactId: activeContactId, 
+      status: 'sent', // 'sent', 'delivered', 'read'
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+    };
+    
     setMessages(prev => [...prev, newMsg]);
     setMessage('');
     
+    // Simulate status progression
     setTimeout(() => {
-      const botMsg = { id: Date.now() + 1, text: 'Pesan terkirim dan tersimpan secara permanen! 🚀', sender: 'bot', contactId: activeContactId, timestamp: new Date().toISOString() };
-      setMessages(prev => [...prev, botMsg]);
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'delivered' } : m));
     }, 1000);
+
+    setTimeout(() => {
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'read' } : m));
+    }, 3000);
+
+    // Simulated Bot Response
+    if (activeContactId === 'ai-init') {
+      setTimeout(() => {
+        const botMsg = { 
+          id: Date.now() + 1, 
+          text: 'Pesan Anda sudah saya terima! Kami akan segera kembali.', 
+          sender: 'bot', 
+          contactId: activeContactId, 
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+        };
+        setMessages(prev => [...prev, botMsg]);
+      }, 4000);
+    }
   };
 
   const handleAddContact = (e) => {
     e.preventDefault();
     if (!newContact.trim()) return;
-    
     const id = Date.now().toString();
     const formattedName = newContact.startsWith('+') ? newContact : `+${newContact}`;
-    
-    setContacts(prev => [...prev, { 
-      id: id, 
-      name: formattedName, 
-      status: 'Baru ditambahkan',
-      avatar: Array.from(formattedName).filter(c => isNaN(parseInt(c))).join('') || '?'
-    }]);
+    setContacts(prev => [...prev, { id, name: formattedName, status: 'Baru ditambahkan', avatar: '?' }]);
     setNewContact('');
-    alert(`Nomor ${formattedName} berhasil disimpan ke daftar kontak!`);
+    alert(`Nomor ${formattedName} berhasil disimpan!`);
   };
 
   const activeContact = contacts.find(c => c.id === activeContactId) || contacts[0] || { avatar: '?', name: 'Unknown' };
@@ -102,12 +118,7 @@ const ChatView = () => {
         <form className="add-contact-bar" onSubmit={handleAddContact}>
           <div className="input-group">
             <UserPlusIcon className="input-icon" />
-            <input 
-              type="text" 
-              placeholder="Tambah nomor..." 
-              value={newContact}
-              onChange={(e) => setNewContact(e.target.value)}
-            />
+            <input type="text" placeholder="Tambah nomor..." value={newContact} onChange={(e) => setNewContact(e.target.value)} />
             <button type="submit" className="add-btn">Add</button>
           </div>
         </form>
@@ -119,14 +130,7 @@ const ChatView = () => {
         
         <div className="contact-list">
           {contacts.map((contact) => (
-            <div 
-              key={contact.id} 
-              className={`contact-item ${activeContactId === contact.id ? 'active' : ''}`}
-              onClick={() => {
-                setActiveContactId(contact.id);
-                if (window.innerWidth <= 768) setMobileView('messages');
-              }}
-            >
+            <div key={contact.id} className={`contact-item ${activeContactId === contact.id ? 'active' : ''}`} onClick={() => { setActiveContactId(contact.id); if (window.innerWidth <= 768) setMobileView('messages'); }}>
               <div className="avatar">{contact.avatar}</div>
               <div className="contact-info">
                 <h4>{contact.name}</h4>
@@ -138,12 +142,9 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" />
-            <span>v1.3.0</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.3.1</span>
           </button>
-          <button className="settings-btn">
-            <SettingsIcon className="sidebar-icon" />
-          </button>
+          <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
       </aside>
 
@@ -163,27 +164,27 @@ const ChatView = () => {
             activeMessages.map((msg) => (
               <div key={msg.id} className={`message-wrapper ${msg.sender}`}>
                 <div className="message-bubble">
-                  {msg.text}
+                  <div className="message-content">{msg.text}</div>
+                  <div className="message-meta">
+                    <span className="timestamp">{msg.timestamp}</span>
+                    {msg.sender === 'user' && (
+                      <span className={`status-icon ${msg.status}`}>
+                        {msg.status === 'sent' && <SingleCheckIcon className="check-svg" />}
+                        {(msg.status === 'delivered' || msg.status === 'read') && <DoubleCheckIcon className="check-svg" />}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))
           ) : (
-            <div className="empty-chat">
-              <p>Belum ada pesan. Mulai obrolan dengan {activeContact.name}</p>
-            </div>
+            <div className="empty-chat"><p>Belum ada pesan. Mulai obrolan dengan {activeContact.name}</p></div>
           )}
         </div>
 
         <form className="chat-input-area" onSubmit={handleSend}>
-          <input 
-            type="text" 
-            placeholder="Ketik pesan di sini..." 
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-          />
-          <button type="submit" className="send-btn" aria-label="Send Message">
-            <SendIcon className="btn-icon-svg" />
-          </button>
+          <input type="text" placeholder="Ketik pesan..." value={message} onChange={(e) => setMessage(e.target.value)} />
+          <button type="submit" className="send-btn"> <SendIcon className="btn-icon-svg" /> </button>
         </form>
       </main>
 
@@ -205,10 +206,7 @@ const ChatView = () => {
             <h3>Update History</h3>
             <div className="version-list">
               {versionHistory.map(item => (
-                <div key={item.v} className="version-item">
-                  <span className="v-tag">{item.v}</span>
-                  <p>{item.detail}</p>
-                </div>
+                <div key={item.v} className="version-item"><span className="v-tag">{item.v}</span><p>{item.detail}</p></div>
               ))}
             </div>
             <button className="btn btn-primary" onClick={() => setShowVersionModal(false)}>Tutup</button>
@@ -228,12 +226,9 @@ const ChatView = () => {
               <label>Nomor Unik Anda</label>
               <div className="id-card">
                 <span className="id-number">{myProfile.uniqueId}</span>
-                <button className="copy-btn" onClick={() => {
-                  navigator.clipboard.writeText(myProfile.uniqueId);
-                  alert('Nomor disalin ke clipboard!');
-                }}>Salin</button>
+                <button className="copy-btn" onClick={() => { navigator.clipboard.writeText(myProfile.uniqueId); alert('Nomor disalin!'); }}>Salin</button>
               </div>
-              <p className="note">Nomor ini dibuat khusus untuk Anda dan tersimpan secara permanen di perangkat ini.</p>
+              <p className="note">Bagikan nomor ini agar orang lain bisa menyimpan Anda sebagai kontak.</p>
             </div>
             <button className="btn btn-primary" onClick={() => setShowProfileModal(false)}>Kembali</button>
           </div>
