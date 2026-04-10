@@ -15,7 +15,7 @@ import {
 } from './Icons';
 import { db } from '../utils/db';
 import { supabase } from '../supabase';
-import { formatPhoneInput } from '../utils/format';
+import { formatPhoneInput, canonicalPhone } from '../utils/format';
 
 const ChatView = () => {
   const [message, setMessage] = useState('');
@@ -32,9 +32,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.3.7', detail: 'Real-Time Fix: Standardized ID Format.' },
     { v: '1.3.6', detail: 'Default view: Kontak (all devices).' },
-    { v: '1.3.5', detail: 'Smart Phone Formatting & Standard Unique ID.' },
-    { v: '1.3.3', detail: 'Persistent Deletion & Real Read Status.' }
+    { v: '1.3.5', detail: 'Smart Phone Formatting & Standard Unique ID.' }
   ];
 
   // Auto-scroll to bottom
@@ -47,10 +47,17 @@ const ChatView = () => {
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
     const savedDeletedIds = db.getDeletedMessages();
+    
+    // Canonicalize existing contacts on load
+    const sanitizedContacts = savedContacts.map(c => ({
+      ...c,
+      id: canonicalPhone(c.id) // Ensure ID is canonical (+62812...)
+    }));
+
     setMyProfile(profile);
-    setContacts(savedContacts);
+    setContacts(sanitizedContacts);
     setDeletedIds(savedDeletedIds);
-    if (savedContacts.length > 0) setActiveContactId(savedContacts[0].id);
+    if (sanitizedContacts.length > 0) setActiveContactId(sanitizedContacts[0].id);
   }, []);
 
   // Sync data to local DB
@@ -124,12 +131,14 @@ const ChatView = () => {
       created_at: new Date().toISOString()
     };
     
+    const tempText = message;
     setMessage('');
     
     const { error } = await supabase.from('messages').insert([newMsg]);
     if (error) {
       console.error('Error sending message:', error);
-      alert(`Gagal mengirim pesan: ${error.message}\n\nPastikan Tabel 'messages' sudah dibuat di Supabase (cek Walkthrough untuk SQL).`);
+      setMessage(tempText); // Restore on error
+      alert(`Gagal mengirim pesan: ${error.message}\n\nPastikan Tabel 'messages' sudah dibuat di Supabase.`);
     }
   };
 
@@ -137,10 +146,15 @@ const ChatView = () => {
     e.preventDefault();
     if (!newContact.trim()) return;
     
-    // Standardize format before saving
-    const formatted = formatPhoneInput(newContact);
-    if (contacts.find(c => c.id === formatted)) return alert('Kontak sudah ada.');
-    setContacts(prev => [...prev, { id: formatted, name: formatted, status: 'Baru ditambahkan', avatar: '?' }]);
+    const canonical = canonicalPhone(newContact);
+    if (contacts.find(c => c.id === canonical)) return alert('Kontak sudah ada.');
+    
+    setContacts(prev => [...prev, { 
+      id: canonical, 
+      name: canonical, // Display formatted version via helper in JSX
+      status: 'Baru ditambahkan', 
+      avatar: '?' 
+    }]);
     setNewContact('');
   };
 
@@ -162,7 +176,7 @@ const ChatView = () => {
     }
   };
 
-  const activeContact = contacts.find(c => c.id === activeContactId) || { avatar: '?', name: 'Pilih Kontak' };
+  const activeContact = contacts.find(c => c.id === activeContactId) || { avatar: '?', id: '' };
   
   // Filter messages: matches current chat AND NOT deleted for me
   const getDisplayMessages = () => {
@@ -207,7 +221,7 @@ const ChatView = () => {
             <div key={contact.id} className={`contact-item ${activeContactId === contact.id ? 'active' : ''}`} onClick={() => { setActiveContactId(contact.id); if (window.innerWidth <= 768) setMobileView('messages'); }}>
               <div className="avatar">{contact.avatar}</div>
               <div className="contact-info">
-                <h4>{contact.name}</h4>
+                <h4>{formatPhoneInput(contact.id)}</h4>
                 <p>{contact.status}</p>
               </div>
               <button className="delete-contact-btn" onClick={(e) => { e.stopPropagation(); handleDeleteContact(contact.id); }}>
@@ -219,7 +233,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.3.6</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.3.7</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
@@ -228,11 +242,17 @@ const ChatView = () => {
       <main className={`chat-main ${mobileView === 'messages' ? 'mobile-active' : ''}`}>
         <header className="chat-header">
           <div className="active-contact">
-            <div className="avatar">{activeContact.avatar}</div>
-            <div className="header-info">
-              <h3>{activeContact.name}</h3>
-              <p className="status-indicator">{activeContact.status}</p>
-            </div>
+            {activeContactId ? (
+              <>
+                <div className="avatar">{activeContact.avatar}</div>
+                <div className="header-info">
+                  <h3>{formatPhoneInput(activeContact.id)}</h3>
+                  <p className="status-indicator">{activeContact.status}</p>
+                </div>
+              </>
+            ) : (
+              <div className="header-info"><h3>Pilih Kontak</h3></div>
+            )}
           </div>
         </header>
 
@@ -314,8 +334,8 @@ const ChatView = () => {
             <div className="unique-id-box">
               <label>Nomor Unik Anda</label>
               <div className="id-card">
-                <span className="id-number">{myProfile.uniqueId}</span>
-                <button className="copy-btn" onClick={() => { navigator.clipboard.writeText(myProfile.uniqueId); alert('Nomor disalin!'); }}>Salin</button>
+                <span className="id-number">{formatPhoneInput(myProfile.uniqueId)}</span>
+                <button className="copy-btn" onClick={() => { navigator.clipboard.writeText(formatPhoneInput(myProfile.uniqueId)); alert('Nomor disalin!'); }}>Salin</button>
               </div>
               <p className="note">Gunakan nomor ini untuk chat real-time via Supabase.</p>
             </div>

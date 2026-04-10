@@ -1,4 +1,4 @@
-import { formatPhoneInput } from './format';
+import { formatPhoneInput, canonicalPhone } from './format';
 // Simple LocalStorage Database Utility
 const DB_KEYS = {
   PROFILE: 'ischat_profile',
@@ -8,7 +8,7 @@ const DB_KEYS = {
 
 const defaultProfile = () => ({
   name: 'Pengguna ISChat',
-  uniqueId: formatPhoneInput(`08${Math.floor(100000000 + Math.random() * 900000000)}`),
+  uniqueId: canonicalPhone(`08${Math.floor(100000000 + Math.random() * 900000000)}`),
   status: 'Tersedia'
 });
 
@@ -18,13 +18,19 @@ const defaultContacts = [
 
 export const db = {
   getProfile: () => {
-    const data = localStorage.getItem(DB_KEYS.PROFILE);
+    let data = localStorage.getItem(DB_KEYS.PROFILE);
     if (!data) {
       const profile = defaultProfile();
       localStorage.setItem(DB_KEYS.PROFILE, JSON.stringify(profile));
       return profile;
     }
-    return JSON.parse(data);
+    const profile = JSON.parse(data);
+    // Auto-fix uniqueId if it's in the old formatted style
+    if (profile.uniqueId && (profile.uniqueId.includes(' ') || profile.uniqueId.includes('-'))) {
+      profile.uniqueId = canonicalPhone(profile.uniqueId);
+      localStorage.setItem(DB_KEYS.PROFILE, JSON.stringify(profile));
+    }
+    return profile;
   },
 
   getContacts: () => {

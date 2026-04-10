@@ -40,3 +40,10 @@ export const cleanPhone = (value) => {
   if (digits.startsWith('0')) return '62' + digits.substring(1);
   return digits;
 };
+
+// Canonical format for DB storage: +628123456789
+export const canonicalPhone = (value) => {
+  const cleaned = cleanPhone(value);
+  if (!cleaned) return '';
+  return `+${cleaned}`;
+};
