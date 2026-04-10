@@ -341,6 +341,11 @@ h1 {
   outline: none;
 }
 .profile-name-input:focus { border-color: var(--primary-light); }
+.profile-identity-card { background: rgba(0,0,0,0.3); border-radius: 16px; padding: 1rem; margin-bottom: 1.5rem; border: 1px solid var(--glass-border); }
+.profile-identity-card label { font-size: 0.7rem; color: var(--primary-light); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
+.profile-phone-large { font-size: 1.8rem; font-weight: 800; color: white; margin: 0; letter-spacing: -1px; }
+.input-label { font-size: 0.7rem; color: var(--text-secondary); text-align: left; display: block; width: 100%; margin-bottom: 4px; padding-left: 4px; }
+.profile-name-input { margin-bottom: 1.5rem !important; }
 
 .status-text { color: var(--text-secondary); margin-bottom: 1.5rem; }
 .my-phone-badge { 

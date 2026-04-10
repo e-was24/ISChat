@@ -39,12 +39,12 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.6.3', detail: 'Profile Sync: Shared Avatars via Presence & Pro Profile.' },
     { v: '1.6.2', detail: 'Sync Fix: Enforced canonical phone format (+62).' },
-    { v: '1.6.1', detail: 'Stability Patch: Fixed Checkmarks & Profile UI.' },
-    { v: '1.6.0', detail: 'Identity Refactor: Show Name + Number simultaneously.' }
+    { v: '1.6.1', detail: 'Stability Patch: Fixed Checkmarks & Profile UI.' }
   ];
 
-  const currentVersion = '1.6.2';
+  const currentVersion = '1.6.3';
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -130,7 +130,11 @@ const ChatView = () => {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await presenceChannel.track({ online_at: new Date().toISOString() });
+          await presenceChannel.track({ 
+            online_at: new Date().toISOString(),
+            name: myProfile.name,
+            avatar: myProfile.avatar
+          });
         }
       });
 
@@ -290,13 +294,19 @@ const ChatView = () => {
         <div className="contact-list">
           {contacts.map((c) => {
             const cleanId = cleanPhone(c.id);
-            const isOnline = onlineUsers[cleanId];
+            const presence = onlineUsers[cleanId]?.[0];
+            const isOnline = !!presence;
+            
+            // Prefer shared metadata from Presence
+            const displayName = presence?.name || c.name || formatPhoneInput(c.id);
+            const displayAvatar = presence?.avatar || c.avatar;
+
             const unread = messages.filter(m => cleanPhone(m.sender_id) === cleanId && cleanPhone(m.receiver_id) === cleanPhone(myProfile.uniqueId) && m.status !== 'read').length;
             
             return (
               <div key={c.id} className={`contact-item ${activeContactId === c.id ? 'active' : ''}`} onClick={() => { setActiveContactId(c.id); if (window.innerWidth <= 768) setMobileView('messages'); }}>
                 <div className="avatar">
-                  { c.avatar && c.avatar !== '?' ? <img src={c.avatar} className="avatar-img" /> : (c.name ? c.name.charAt(0) : '?') }
+                  { displayAvatar && displayAvatar !== '?' ? <img src={displayAvatar} className="avatar-img" /> : (displayName ? displayName.charAt(0) : '?') }
                   { isOnline && <div className="online-indicator"></div> }
                   { unread > 0 && <span className="unread-dot">{unread}</span> }
                 </div>
@@ -305,7 +315,7 @@ const ChatView = () => {
                     {editingContactId === c.id ? (
                       <input className="edit-input" value={editName} onChange={e => setEditName(e.target.value)} onBlur={saveContactName} onKeyDown={e => e.key === 'Enter' && saveContactName()} autoFocus />
                     ) : (
-                      <><h4>{c.name || formatPhoneInput(c.id)}</h4><button className="edit-btn" onClick={(e) => { e.stopPropagation(); startEditing(c); }}><EditIcon /></button></>
+                      <><h4>{displayName}</h4><button className="edit-btn" onClick={(e) => { e.stopPropagation(); startEditing(c); }}><EditIcon /></button></>
                     )}
                   </div>
                   <p className="contact-number">{formatPhoneInput(c.id)}</p>
@@ -318,7 +328,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.2</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.3</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
@@ -327,9 +337,9 @@ const ChatView = () => {
         <header className="chat-header">
           {activeContactId ? (
             <div className="active-contact">
-              <div className="avatar">{activeContact.avatar && activeContact.avatar !== '?' ? <img src={activeContact.avatar} className="avatar-img" /> : (activeContact.name ? activeContact.name.charAt(0) : '?')}</div>
+              <div className="avatar">{ (onlineUsers[cleanPhone(activeContact.id)]?.[0]?.avatar || activeContact.avatar) && (onlineUsers[cleanPhone(activeContact.id)]?.[0]?.avatar || activeContact.avatar) !== '?' ? <img src={onlineUsers[cleanPhone(activeContact.id)]?.[0]?.avatar || activeContact.avatar} className="avatar-img" /> : (activeContact.name ? activeContact.name.charAt(0) : '?')}</div>
               <div className="header-info">
-                <h3>{activeContact.name || formatPhoneInput(activeContact.id)}</h3>
+                <h3>{onlineUsers[cleanPhone(activeContact.id)]?.[0]?.name || activeContact.name || formatPhoneInput(activeContact.id)}</h3>
                 <p className="status-indicator">{formatPhoneInput(activeContact.id)} • {onlineUsers[cleanPhone(activeContact.id)] ? 'Online' : activeContact.status}</p>
               </div>
             </div>
@@ -386,13 +396,19 @@ const ChatView = () => {
                 <label className="photo-upload-btn"><CameraIcon /><input type="file" hidden accept="image/*" onChange={handleFileChange} /></label>
               </div>
             </div>
+            
+            <div className="profile-identity-card">
+              <label>Nomor Anda</label>
+              <h2 className="profile-phone-large">{formatPhoneInput(myProfile.uniqueId)}</h2>
+            </div>
+
             <div className="profile-info-edit">
+              <label className="input-label">Nama Tampilan</label>
               <input className="profile-name-input" value={myProfile.name} onChange={e => setMyProfile({...myProfile, name: e.target.value})} placeholder="Nama Anda" />
-              <div className="my-phone-badge">{formatPhoneInput(myProfile.uniqueId)}</div>
               <p className="status-text">{myProfile.status}</p>
             </div>
             <div className="unique-id-box">
-              <label>ID Unik Anda (Salin untuk teman)</label>
+              <label>ID Unik (Berikan ke teman)</label>
               <div className="id-card"><span className="id-number">{formatPhoneInput(myProfile.uniqueId)}</span><button className="copy-btn" onClick={() => { navigator.clipboard.writeText(formatPhoneInput(myProfile.uniqueId)); alert('Disalin!'); }}>Salin</button></div>
             </div>
             <button className="btn btn-primary" onClick={() => setShowProfileModal(false)}>Selesai</button>
