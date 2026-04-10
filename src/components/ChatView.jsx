@@ -39,12 +39,12 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.6.0', detail: 'Identity Refactor: Show Name + Number simultaneously.' },
     { v: '1.5.9', detail: 'Optimistic UI: Instant sending & Error alerts.' },
-    { v: '1.5.8', detail: 'Local Cache & Persistence (WhatsApp style).' },
-    { v: '1.5.7', detail: 'Feature Restore: Chat Deletion (Me/Everyone).' }
+    { v: '1.5.8', detail: 'Local Cache & Persistence (WhatsApp style).' }
   ];
 
-  const currentVersion = '1.5.9';
+  const currentVersion = '1.6.0';
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -302,7 +302,8 @@ const ChatView = () => {
                       <><h4>{c.name || formatPhoneInput(c.id)}</h4><button className="edit-btn" onClick={(e) => { e.stopPropagation(); startEditing(c); }}><EditIcon /></button></>
                     )}
                   </div>
-                  <p>{isOnline ? 'Online' : c.status}</p>
+                  <p className="contact-number">{formatPhoneInput(c.id)}</p>
+                  <p className="contact-status">{isOnline ? 'Online' : c.status}</p>
                 </div>
                 <button className="delete-contact-btn" onClick={(e) => { e.stopPropagation(); if (window.confirm('Hapus?')) setContacts(prev => prev.filter(cc => cc.id !== c.id)); }}><TrashIcon className="sidebar-icon" /></button>
               </div>
@@ -311,7 +312,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.9</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.0</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
@@ -321,7 +322,10 @@ const ChatView = () => {
           {activeContactId ? (
             <div className="active-contact">
               <div className="avatar">{activeContact.avatar && activeContact.avatar !== '?' ? <img src={activeContact.avatar} className="avatar-img" /> : (activeContact.name ? activeContact.name.charAt(0) : '?')}</div>
-              <div className="header-info"><h3>{activeContact.name || formatPhoneInput(activeContact.id)}</h3><p className="status-indicator">{onlineUsers[cleanPhone(activeContact.id)] ? 'Online' : activeContact.status}</p></div>
+              <div className="header-info">
+                <h3>{activeContact.name || formatPhoneInput(activeContact.id)}</h3>
+                <p className="status-indicator">{formatPhoneInput(activeContact.id)} • {onlineUsers[cleanPhone(activeContact.id)] ? 'Online' : activeContact.status}</p>
+              </div>
             </div>
           ) : <div className="header-info"><h3>ISChat</h3></div>}
         </header>
