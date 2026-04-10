@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   SendIcon, 
   SearchIcon, 
@@ -10,9 +10,11 @@ import {
   MessageSquareIcon, 
   UsersIcon,
   SingleCheckIcon,
-  DoubleCheckIcon
+  DoubleCheckIcon,
+  TrashIcon
 } from './Icons';
 import { db } from '../utils/db';
+import { supabase } from '../supabase';
 
 const ChatView = () => {
   const [message, setMessage] = useState('');
@@ -23,86 +25,142 @@ const ChatView = () => {
   
   const [myProfile, setMyProfile] = useState({ name: '', uniqueId: '', status: '' });
   const [contacts, setContacts] = useState([]);
-  const [activeContactId, setActiveContactId] = useState('ai-init');
+  const [activeContactId, setActiveContactId] = useState('');
   const [messages, setMessages] = useState([]);
+  const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.3.2', detail: 'Real-Time Supabase, Deletion (Contact/Msg), & Mobile Tweak.' },
     { v: '1.3.1', detail: 'Message Status Indicators (Checkmarks) & Supabase Ready.' },
-    { v: '1.3.0', detail: 'Data Persistence (DB), Fix Send Icon, & Unique User Numbers.' },
-    { v: '1.2.0', detail: 'Fitur Profil, Nomor Unik, & Bottom Navigation (Mobile).' }
+    { v: '1.3.0', detail: 'Data Persistence (DB) & Unique User Numbers.' }
   ];
 
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Load initial data
   useEffect(() => {
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
-    const savedMessages = db.getMessages();
     setMyProfile(profile);
     setContacts(savedContacts);
-    setMessages(savedMessages);
     if (savedContacts.length > 0) setActiveContactId(savedContacts[0].id);
   }, []);
 
+  // Sync contacts to local DB
   useEffect(() => {
     if (contacts.length > 0) db.saveContacts(contacts);
   }, [contacts]);
 
+  // SUPABASE REAL-TIME Logic
   useEffect(() => {
-    if (messages.length > 0) db.saveMessages(messages);
-  }, [messages]);
+    if (!myProfile.uniqueId) return;
 
-  const handleSend = (e) => {
+    // Fetch initial messages from Supabase
+    const fetchMessages = async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`sender_id.eq.${myProfile.uniqueId},receiver_id.eq.${myProfile.uniqueId}`)
+        .order('created_at', { ascending: true });
+
+      if (!error && data) {
+        setMessages(data);
+      }
+    };
+
+    fetchMessages();
+
+    // Subscribe to REALTIME changes
+    const channel = supabase
+      .channel('public:messages')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const newMsg = payload.new;
+          if (newMsg.receiver_id === myProfile.uniqueId || newMsg.sender_id === myProfile.uniqueId) {
+            setMessages(prev => {
+              if (prev.find(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+          }
+        } else if (payload.eventType === 'DELETE') {
+          setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+        } else if (payload.eventType === 'UPDATE') {
+          setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [myProfile.uniqueId]);
+
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!message.trim() || !activeContactId) return;
     
-    const msgId = Date.now();
+    const activeContact = contacts.find(c => c.id === activeContactId);
+    if (!activeContact) return;
+
+    const receiverId = activeContact.id.startsWith('+') ? activeContact.id : activeContact.name; 
+
     const newMsg = { 
-      id: msgId, 
       text: message, 
-      sender: 'user', 
-      contactId: activeContactId, 
-      status: 'sent', // 'sent', 'delivered', 'read'
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      sender_id: myProfile.uniqueId, 
+      receiver_id: activeContact.id, // Using the contact id (phone number)
+      status: 'sent',
+      created_at: new Date().toISOString()
     };
     
-    setMessages(prev => [...prev, newMsg]);
     setMessage('');
     
-    // Simulate status progression
-    setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'delivered' } : m));
-    }, 1000);
-
-    setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, status: 'read' } : m));
-    }, 3000);
-
-    // Simulated Bot Response
-    if (activeContactId === 'ai-init') {
-      setTimeout(() => {
-        const botMsg = { 
-          id: Date.now() + 1, 
-          text: 'Pesan Anda sudah saya terima! Kami akan segera kembali.', 
-          sender: 'bot', 
-          contactId: activeContactId, 
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-        };
-        setMessages(prev => [...prev, botMsg]);
-      }, 4000);
+    const { error } = await supabase.from('messages').insert([newMsg]);
+    if (error) {
+      console.error('Error sending message:', error);
+      alert('Gagal mengirim pesan (Supabase Error)');
     }
   };
 
   const handleAddContact = (e) => {
     e.preventDefault();
     if (!newContact.trim()) return;
-    const id = Date.now().toString();
-    const formattedName = newContact.startsWith('+') ? newContact : `+${newContact}`;
-    setContacts(prev => [...prev, { id, name: formattedName, status: 'Baru ditambahkan', avatar: '?' }]);
+    const formatted = newContact.startsWith('+') ? newContact : `+${newContact}`;
+    if (contacts.find(c => c.id === formatted)) return alert('Kontak sudah ada.');
+    
+    setContacts(prev => [...prev, { id: formatted, name: formatted, status: 'Baru ditambahkan', avatar: '?' }]);
     setNewContact('');
-    alert(`Nomor ${formattedName} berhasil disimpan!`);
   };
 
-  const activeContact = contacts.find(c => c.id === activeContactId) || contacts[0] || { avatar: '?', name: 'Unknown' };
-  const activeMessages = messages.filter(m => m.contactId === activeContactId);
+  const handleDeleteContact = (id) => {
+    if (window.confirm('Hapus kontak ini?')) {
+      setContacts(prev => prev.filter(c => c.id !== id));
+      if (activeContactId === id) setActiveContactId('');
+    }
+  };
+
+  const handleDeleteForMe = (id) => {
+    setMessages(prev => prev.filter(m => m.id !== id));
+    // Implementation note: Local only deletion is purely state-based here.
+    // In a real app, you'd store a 'deleted_for' array in DB.
+  };
+
+  const handleDeleteForEveryone = async (id) => {
+    if (window.confirm('Hapus pesan ini untuk semua orang?')) {
+      const { error } = await supabase.from('messages').delete().eq('id', id);
+      if (error) alert('Gagal menghapus pesan.');
+    }
+  };
+
+  const activeContact = contacts.find(c => c.id === activeContactId) || { avatar: '?', name: 'Pilih Kontak' };
+  const getDisplayMessages = () => {
+    return messages.filter(m => 
+      (m.sender_id === myProfile.uniqueId && m.receiver_id === activeContactId) ||
+      (m.sender_id === activeContactId && m.receiver_id === myProfile.uniqueId)
+    );
+  };
 
   return (
     <div className="chat-container">
@@ -136,13 +194,16 @@ const ChatView = () => {
                 <h4>{contact.name}</h4>
                 <p>{contact.status}</p>
               </div>
+              <button className="delete-contact-btn" onClick={(e) => { e.stopPropagation(); handleDeleteContact(contact.id); }}>
+                <TrashIcon className="sidebar-icon" />
+              </button>
             </div>
           ))}
         </div>
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.3.1</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.3.2</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
@@ -160,26 +221,37 @@ const ChatView = () => {
         </header>
 
         <div className="messages-area">
-          {activeMessages.length > 0 ? (
-            activeMessages.map((msg) => (
-              <div key={msg.id} className={`message-wrapper ${msg.sender}`}>
-                <div className="message-bubble">
-                  <div className="message-content">{msg.text}</div>
-                  <div className="message-meta">
-                    <span className="timestamp">{msg.timestamp}</span>
-                    {msg.sender === 'user' && (
-                      <span className={`status-icon ${msg.status}`}>
-                        {msg.status === 'sent' && <SingleCheckIcon className="check-svg" />}
-                        {(msg.status === 'delivered' || msg.status === 'read') && <DoubleCheckIcon className="check-svg" />}
-                      </span>
-                    )}
+          {activeContactId ? (
+            getDisplayMessages().length > 0 ? (
+              getDisplayMessages().map((msg) => (
+                <div key={msg.id} className={`message-wrapper ${msg.sender_id === myProfile.uniqueId ? 'user' : 'bot'}`}>
+                  <div className="message-bubble">
+                    <div className="message-content">{msg.text}</div>
+                    <div className="message-meta">
+                      <span className="timestamp">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {msg.sender_id === myProfile.uniqueId && (
+                        <span className={`status-icon ${msg.status}`}>
+                          {msg.status === 'sent' && <SingleCheckIcon className="check-svg" />}
+                          {(msg.status === 'delivered' || msg.status === 'read') && <DoubleCheckIcon className="check-svg" />}
+                        </span>
+                      )}
+                    </div>
+                    <div className="message-actions">
+                      <button className="action-btn" onClick={() => handleDeleteForMe(msg.id)}>Hapus Saya</button>
+                      {msg.sender_id === myProfile.uniqueId && (
+                        <button className="action-btn delete" onClick={() => handleDeleteForEveryone(msg.id)}>Hapus Semua</button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              ))
+            ) : (
+              <div className="empty-chat"><p>Belum ada pesan. Mulai obrolan dengan {activeContact.name}</p></div>
+            )
           ) : (
-            <div className="empty-chat"><p>Belum ada pesan. Mulai obrolan dengan {activeContact.name}</p></div>
+            <div className="empty-chat"><p>Pilih kontak untuk memulai pesan.</p></div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         <form className="chat-input-area" onSubmit={handleSend}>
@@ -228,7 +300,7 @@ const ChatView = () => {
                 <span className="id-number">{myProfile.uniqueId}</span>
                 <button className="copy-btn" onClick={() => { navigator.clipboard.writeText(myProfile.uniqueId); alert('Nomor disalin!'); }}>Salin</button>
               </div>
-              <p className="note">Bagikan nomor ini agar orang lain bisa menyimpan Anda sebagai kontak.</p>
+              <p className="note">Gunakan nomor ini untuk chat antar perangkat secara real-time via Supabase.</p>
             </div>
             <button className="btn btn-primary" onClick={() => setShowProfileModal(false)}>Kembali</button>
           </div>
