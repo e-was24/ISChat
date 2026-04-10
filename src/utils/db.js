@@ -1,3 +1,4 @@
+import { formatPhoneInput } from './format';
 // Simple LocalStorage Database Utility
 const DB_KEYS = {
   PROFILE: 'ischat_profile',
@@ -7,7 +8,7 @@ const DB_KEYS = {
 
 const defaultProfile = () => ({
   name: 'Pengguna ISChat',
-  uniqueId: `+62 ${Math.floor(100 + Math.random() * 900)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`,
+  uniqueId: formatPhoneInput(`08${Math.floor(100000000 + Math.random() * 900000000)}`),
   status: 'Tersedia'
 });
 

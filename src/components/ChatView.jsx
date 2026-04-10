@@ -15,6 +15,7 @@ import {
 } from './Icons';
 import { db } from '../utils/db';
 import { supabase } from '../supabase';
+import { formatPhoneInput } from '../utils/format';
 
 const ChatView = () => {
   const [message, setMessage] = useState('');
@@ -135,7 +136,9 @@ const ChatView = () => {
   const handleAddContact = (e) => {
     e.preventDefault();
     if (!newContact.trim()) return;
-    const formatted = newContact.startsWith('+') ? newContact : `+${newContact}`;
+    
+    // Standardize format before saving
+    const formatted = formatPhoneInput(newContact);
     if (contacts.find(c => c.id === formatted)) return alert('Kontak sudah ada.');
     setContacts(prev => [...prev, { id: formatted, name: formatted, status: 'Baru ditambahkan', avatar: '?' }]);
     setNewContact('');
@@ -184,7 +187,12 @@ const ChatView = () => {
         <form className="add-contact-bar" onSubmit={handleAddContact}>
           <div className="input-group">
             <UserPlusIcon className="input-icon" />
-            <input type="text" placeholder="Tambah nomor..." value={newContact} onChange={(e) => setNewContact(e.target.value)} />
+            <input 
+              type="text" 
+              placeholder="Tambah nomor (contoh 0812...)" 
+              value={newContact} 
+              onChange={(e) => setNewContact(formatPhoneInput(e.target.value))} 
+            />
             <button type="submit" className="add-btn">Add</button>
           </div>
         </form>
