@@ -27,12 +27,13 @@ const ChatView = () => {
   const [contacts, setContacts] = useState([]);
   const [activeContactId, setActiveContactId] = useState('');
   const [messages, setMessages] = useState([]);
+  const [deletedIds, setDeletedIds] = useState([]);
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.3.3', detail: 'Persistent Deletion, Real Read Status, & Scroll Fix.' },
     { v: '1.3.2', detail: 'Real-Time Supabase, Deletion (Contact/Msg), & Mobile Tweak.' },
-    { v: '1.3.1', detail: 'Message Status Indicators (Checkmarks) & Supabase Ready.' },
-    { v: '1.3.0', detail: 'Data Persistence (DB) & Unique User Numbers.' }
+    { v: '1.3.1', detail: 'Message Status Indicators (Checkmarks) & Supabase Ready.' }
   ];
 
   // Auto-scroll to bottom
@@ -44,21 +45,26 @@ const ChatView = () => {
   useEffect(() => {
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
+    const savedDeletedIds = db.getDeletedMessages();
     setMyProfile(profile);
     setContacts(savedContacts);
+    setDeletedIds(savedDeletedIds);
     if (savedContacts.length > 0) setActiveContactId(savedContacts[0].id);
   }, []);
 
-  // Sync contacts to local DB
+  // Sync data to local DB
   useEffect(() => {
     if (contacts.length > 0) db.saveContacts(contacts);
   }, [contacts]);
+
+  useEffect(() => {
+    db.saveDeletedMessages(deletedIds);
+  }, [deletedIds]);
 
   // SUPABASE REAL-TIME Logic
   useEffect(() => {
     if (!myProfile.uniqueId) return;
 
-    // Fetch initial messages from Supabase
     const fetchMessages = async () => {
       const { data, error } = await supabase
         .from('messages')
@@ -73,7 +79,6 @@ const ChatView = () => {
 
     fetchMessages();
 
-    // Subscribe to REALTIME changes
     const channel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
@@ -84,6 +89,10 @@ const ChatView = () => {
               if (prev.find(m => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
             });
+            // Auto mark as read if active
+            if (newMsg.receiver_id === myProfile.uniqueId && newMsg.sender_id === activeContactId) {
+              markAsRead(newMsg.id);
+            }
           }
         } else if (payload.eventType === 'DELETE') {
           setMessages(prev => prev.filter(m => m.id !== payload.old.id));
@@ -96,21 +105,20 @@ const ChatView = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [myProfile.uniqueId]);
+  }, [myProfile.uniqueId, activeContactId]);
+
+  const markAsRead = async (messageId) => {
+    await supabase.from('messages').update({ status: 'read' }).eq('id', messageId);
+  };
 
   const handleSend = async (e) => {
     e.preventDefault();
     if (!message.trim() || !activeContactId) return;
     
-    const activeContact = contacts.find(c => c.id === activeContactId);
-    if (!activeContact) return;
-
-    const receiverId = activeContact.id.startsWith('+') ? activeContact.id : activeContact.name; 
-
     const newMsg = { 
       text: message, 
       sender_id: myProfile.uniqueId, 
-      receiver_id: activeContact.id, // Using the contact id (phone number)
+      receiver_id: activeContactId, 
       status: 'sent',
       created_at: new Date().toISOString()
     };
@@ -120,7 +128,7 @@ const ChatView = () => {
     const { error } = await supabase.from('messages').insert([newMsg]);
     if (error) {
       console.error('Error sending message:', error);
-      alert('Gagal mengirim pesan (Supabase Error)');
+      alert('Gagal mengirim pesan.');
     }
   };
 
@@ -129,7 +137,6 @@ const ChatView = () => {
     if (!newContact.trim()) return;
     const formatted = newContact.startsWith('+') ? newContact : `+${newContact}`;
     if (contacts.find(c => c.id === formatted)) return alert('Kontak sudah ada.');
-    
     setContacts(prev => [...prev, { id: formatted, name: formatted, status: 'Baru ditambahkan', avatar: '?' }]);
     setNewContact('');
   };
@@ -142,9 +149,7 @@ const ChatView = () => {
   };
 
   const handleDeleteForMe = (id) => {
-    setMessages(prev => prev.filter(m => m.id !== id));
-    // Implementation note: Local only deletion is purely state-based here.
-    // In a real app, you'd store a 'deleted_for' array in DB.
+    setDeletedIds(prev => [...prev, id]);
   };
 
   const handleDeleteForEveryone = async (id) => {
@@ -155,10 +160,13 @@ const ChatView = () => {
   };
 
   const activeContact = contacts.find(c => c.id === activeContactId) || { avatar: '?', name: 'Pilih Kontak' };
+  
+  // Filter messages: matches current chat AND NOT deleted for me
   const getDisplayMessages = () => {
     return messages.filter(m => 
-      (m.sender_id === myProfile.uniqueId && m.receiver_id === activeContactId) ||
-      (m.sender_id === activeContactId && m.receiver_id === myProfile.uniqueId)
+      !deletedIds.includes(m.id) &&
+      ((m.sender_id === myProfile.uniqueId && m.receiver_id === activeContactId) ||
+      (m.sender_id === activeContactId && m.receiver_id === myProfile.uniqueId))
     );
   };
 
@@ -203,7 +211,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.3.2</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.3.3</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
@@ -232,7 +240,8 @@ const ChatView = () => {
                       {msg.sender_id === myProfile.uniqueId && (
                         <span className={`status-icon ${msg.status}`}>
                           {msg.status === 'sent' && <SingleCheckIcon className="check-svg" />}
-                          {(msg.status === 'delivered' || msg.status === 'read') && <DoubleCheckIcon className="check-svg" />}
+                          {msg.status === 'delivered' && <DoubleCheckIcon className="check-svg" />}
+                          {msg.status === 'read' && <DoubleCheckIcon className="check-svg read" />}
                         </span>
                       )}
                     </div>
@@ -246,10 +255,10 @@ const ChatView = () => {
                 </div>
               ))
             ) : (
-              <div className="empty-chat"><p>Belum ada pesan. Mulai obrolan dengan {activeContact.name}</p></div>
+              <div className="empty-chat"><p>Belum ada pesan. Mulai obrolan.</p></div>
             )
           ) : (
-            <div className="empty-chat"><p>Pilih kontak untuk memulai pesan.</p></div>
+            <div className="empty-chat"><p>Pilih kontak untuk chat.</p></div>
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -300,7 +309,7 @@ const ChatView = () => {
                 <span className="id-number">{myProfile.uniqueId}</span>
                 <button className="copy-btn" onClick={() => { navigator.clipboard.writeText(myProfile.uniqueId); alert('Nomor disalin!'); }}>Salin</button>
               </div>
-              <p className="note">Gunakan nomor ini untuk chat antar perangkat secara real-time via Supabase.</p>
+              <p className="note">Gunakan nomor ini untuk chat real-time via Supabase.</p>
             </div>
             <button className="btn btn-primary" onClick={() => setShowProfileModal(false)}>Kembali</button>
           </div>

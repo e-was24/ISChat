@@ -42,5 +42,14 @@ export const db = {
 
   saveMessages: (messages) => {
     localStorage.setItem(DB_KEYS.MESSAGES, JSON.stringify(messages));
+  },
+
+  getDeletedMessages: () => {
+    const data = localStorage.getItem('ischat_deleted_ids');
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveDeletedMessages: (ids) => {
+    localStorage.setItem('ischat_deleted_ids', JSON.stringify(ids));
   }
 };
