@@ -128,7 +128,7 @@ const ChatView = () => {
     const { error } = await supabase.from('messages').insert([newMsg]);
     if (error) {
       console.error('Error sending message:', error);
-      alert('Gagal mengirim pesan.');
+      alert(`Gagal mengirim pesan: ${error.message}\n\nPastikan Tabel 'messages' sudah dibuat di Supabase (cek Walkthrough untuk SQL).`);
     }
   };
 
