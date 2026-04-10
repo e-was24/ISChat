@@ -429,6 +429,9 @@ h1 {
 .status-icon.sent { color: var(--text-secondary); }
 .status-icon.delivered { color: var(--text-secondary); }
 .status-icon.read { color: var(--primary-light); }
+.sending-loader { font-size: 0.6rem; animation: pulse 1.5s infinite; }
+.error-mark { color: #ff5252; font-weight: bold; }
+@keyframes pulse { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
 
 .user .message-bubble { background: var(--primary); border: none; border-bottom-right-radius: 4px; }
 .bot .message-bubble { border-bottom-left-radius: 4px; }

@@ -39,12 +39,12 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.5.9', detail: 'Optimistic UI: Instant sending & Error alerts.' },
     { v: '1.5.8', detail: 'Local Cache & Persistence (WhatsApp style).' },
-    { v: '1.5.7', detail: 'Feature Restore: Chat Deletion (Me/Everyone).' },
-    { v: '1.5.6', detail: 'UI Fix: Restored Send Icon visibility.' }
+    { v: '1.5.7', detail: 'Feature Restore: Chat Deletion (Me/Everyone).' }
   ];
 
-  const currentVersion = '1.5.8';
+  const currentVersion = '1.5.9';
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -198,13 +198,44 @@ const ChatView = () => {
   const handleSend = async (e) => {
     e.preventDefault();
     if (!message.trim() || !activeContactId) return;
-    const newMsg = { text: message, sender_id: myProfile.uniqueId, receiver_id: activeContactId, status: 'sent', created_at: new Date().toISOString() };
+    
+    const tempId = `temp-${Date.now()}`;
+    const newMsg = { 
+      id: tempId,
+      text: message, 
+      sender_id: myProfile.uniqueId, 
+      receiver_id: activeContactId, 
+      status: 'sending', 
+      created_at: new Date().toISOString() 
+    };
+    
+    // Optimistic Update
+    setMessages(prev => [...prev, newMsg]);
     setMessage('');
     
     // Update contact status if first chat
-    setContacts(prev => prev.map(c => cleanPhone(c.id) === cleanPhone(activeContactId) && c.status === 'Baru ditambahkan' ? { ...c, status: 'Sedang Chat' } : c));
+    setContacts(prev => prev.map(c => cleanPhone(c.id) === cleanPhone(activeContactId) && c.status === 'Baru saja ditambahkan' ? { ...c, status: 'Sedang Chat' } : c));
     
-    await supabase.from('messages').insert([newMsg]);
+    const { data, error } = await supabase
+      .from('messages')
+      .insert([{ 
+        text: newMsg.text, 
+        sender_id: newMsg.sender_id, 
+        receiver_id: newMsg.receiver_id, 
+        status: 'sent',
+        created_at: newMsg.created_at
+      }])
+      .select();
+
+    if (error) {
+      console.error("Send Error:", error);
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'error' } : m));
+      // Option to retry or just alert
+      setTimeout(() => alert("Gagal mengirim pesan. Silakan cek koneksi internet Anda."), 100);
+    } else if (data && data[0]) {
+      // Replace temp with real
+      setMessages(prev => prev.map(m => m.id === tempId ? data[0] : m));
+    }
   };
 
   const handleAddContact = (e) => {
@@ -280,7 +311,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.8</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.9</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
@@ -305,7 +336,11 @@ const ChatView = () => {
                     <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     {msg.sender_id === myProfile.uniqueId && (
                       <span className={`status-icon ${msg.status}`}>
-                        {msg.status === 'sent' ? <SingleCheckIcon /> : (msg.status === 'read' ? <DoubleCheckIcon className="read" /> : <DoubleCheckIcon />)}
+                        {msg.status === 'sending' && <span className="sending-loader">...</span>}
+                        {msg.status === 'error' && <span className="error-mark">!</span>}
+                        {msg.status === 'sent' && <SingleCheckIcon />}
+                        {msg.status === 'delivered' && <DoubleCheckIcon />}
+                        {msg.status === 'read' && <DoubleCheckIcon className="read" />}
                       </span>
                     )}
                   </div>
