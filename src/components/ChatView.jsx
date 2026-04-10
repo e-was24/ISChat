@@ -39,9 +39,9 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.5.3', detail: 'Bug Fix: Profile Persistence Restore.' },
     { v: '1.5.2', detail: 'Presence (Online), Notifications & Profile Photos.' },
-    { v: '1.5.1', detail: 'Permanent Subscription & Reliable Status Sync.' },
-    { v: '1.5.0', detail: 'Auto-Contact Creation from Incoming Messages.' }
+    { v: '1.5.1', detail: 'Permanent Subscription & Reliable Status Sync.' }
   ];
 
   useEffect(() => { activeChatRef.current = activeContactId; }, [activeContactId]);
@@ -232,7 +232,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.2</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.3</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>

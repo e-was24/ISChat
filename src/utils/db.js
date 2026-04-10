@@ -32,6 +32,10 @@ export const db = {
     }
     return profile;
   },
+  
+  saveProfile: (profile) => {
+    localStorage.setItem(DB_KEYS.PROFILE, JSON.stringify(profile));
+  },
 
   getContacts: () => {
     const data = localStorage.getItem(DB_KEYS.CONTACTS);
