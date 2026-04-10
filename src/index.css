@@ -343,6 +343,16 @@ h1 {
 .profile-name-input:focus { border-color: var(--primary-light); }
 
 .status-text { color: var(--text-secondary); margin-bottom: 1.5rem; }
+.my-phone-badge { 
+  display: inline-block; 
+  background: var(--primary-light); 
+  color: var(--primary-dark); 
+  padding: 4px 12px; 
+  border-radius: 20px; 
+  font-size: 0.85rem; 
+  font-weight: bold; 
+  margin-bottom: 0.5rem;
+}
 
 .diag-box { display: none; } /* HIDDEN AS REQUESTED */
 
@@ -431,7 +441,7 @@ h1 {
 .check-svg { width: 14px; height: 14px; }
 .status-icon.sent { color: var(--text-secondary); }
 .status-icon.delivered { color: var(--text-secondary); }
-.status-icon.read { color: var(--primary-light); }
+.status-icon.read { color: #0084ff; } /* DISTINCT BLUE */
 .sending-loader { font-size: 0.6rem; animation: pulse 1.5s infinite; }
 .error-mark { color: #ff5252; font-weight: bold; }
 @keyframes pulse { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }

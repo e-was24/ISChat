@@ -39,12 +39,12 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.6.1', detail: 'Stability Patch: Fixed Checkmarks & Profile UI.' },
     { v: '1.6.0', detail: 'Identity Refactor: Show Name + Number simultaneously.' },
-    { v: '1.5.9', detail: 'Optimistic UI: Instant sending & Error alerts.' },
-    { v: '1.5.8', detail: 'Local Cache & Persistence (WhatsApp style).' }
+    { v: '1.5.9', detail: 'Optimistic UI: Instant sending & Error alerts.' }
   ];
 
-  const currentVersion = '1.6.0';
+  const currentVersion = '1.6.1';
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -312,7 +312,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.0</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.1</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
@@ -382,10 +382,11 @@ const ChatView = () => {
             </div>
             <div className="profile-info-edit">
               <input className="profile-name-input" value={myProfile.name} onChange={e => setMyProfile({...myProfile, name: e.target.value})} placeholder="Nama Anda" />
+              <div className="my-phone-badge">{formatPhoneInput(myProfile.uniqueId)}</div>
               <p className="status-text">{myProfile.status}</p>
             </div>
             <div className="unique-id-box">
-              <label>Nomor Anda</label>
+              <label>ID Unik Anda (Salin untuk teman)</label>
               <div className="id-card"><span className="id-number">{formatPhoneInput(myProfile.uniqueId)}</span><button className="copy-btn" onClick={() => { navigator.clipboard.writeText(formatPhoneInput(myProfile.uniqueId)); alert('Disalin!'); }}>Salin</button></div>
             </div>
             <button className="btn btn-primary" onClick={() => setShowProfileModal(false)}>Selesai</button>
