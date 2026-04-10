@@ -39,12 +39,12 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.6.2', detail: 'Sync Fix: Enforced canonical phone format (+62).' },
     { v: '1.6.1', detail: 'Stability Patch: Fixed Checkmarks & Profile UI.' },
-    { v: '1.6.0', detail: 'Identity Refactor: Show Name + Number simultaneously.' },
-    { v: '1.5.9', detail: 'Optimistic UI: Instant sending & Error alerts.' }
+    { v: '1.6.0', detail: 'Identity Refactor: Show Name + Number simultaneously.' }
   ];
 
-  const currentVersion = '1.6.1';
+  const currentVersion = '1.6.2';
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -80,27 +80,33 @@ const ChatView = () => {
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
     const savedIds = db.getDeletedMessages();
-    setMyProfile(profile);
-    setContacts(savedContacts.map(c => ({ ...c, id: canonicalPhone(c.id) })));
+    
+    // Force Canonicalization on load
+    const canonProfile = { ...profile, uniqueId: canonicalPhone(profile.uniqueId) };
+    const canonContacts = savedContacts.map(c => ({ ...c, id: canonicalPhone(c.id) }));
+    
+    setMyProfile(canonProfile);
+    setContacts(canonContacts);
     setDeletedIds(savedIds);
-    setMessages(db.getMessages()); // Load from cache instantly
-    if (savedContacts.length > 0) setActiveContactId(savedContacts[0].id);
+    setMessages(db.getMessages());
+    if (canonContacts.length > 0) setActiveContactId(canonContacts[0].id);
   }, []);
 
   useEffect(() => { if (contacts.length > 0) db.saveContacts(contacts); }, [contacts]);
   useEffect(() => { db.saveDeletedMessages(deletedIds); }, [deletedIds]);
   useEffect(() => { db.saveProfile(myProfile); }, [myProfile]);
-  useEffect(() => { db.saveMessages(messages); }, [messages]); // Save messages to cache
+  useEffect(() => { db.saveMessages(messages); }, [messages]);
 
   // Presence & Messages logic
   useEffect(() => {
     if (!myProfile.uniqueId) return;
+    const myCanonId = canonicalPhone(myProfile.uniqueId);
 
     // Initial Fetch & Merge
     const fetchMessages = async () => {
       const { data } = await supabase.from('messages')
         .select('*')
-        .or(`sender_id.eq.${myProfile.uniqueId},receiver_id.eq.${myProfile.uniqueId}`)
+        .or(`sender_id.eq."${myCanonId}",receiver_id.eq."${myCanonId}"`)
         .order('created_at', { ascending: true });
       if (data) {
         setMessages(prev => {
@@ -133,10 +139,10 @@ const ChatView = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const newMsg = payload.new;
-          const myId = cleanPhone(myProfile.uniqueId);
-          const rxId = cleanPhone(newMsg.receiver_id || '');
-          const txId = cleanPhone(newMsg.sender_id || '');
-          const activeId = cleanPhone(activeChatRef.current);
+          const myId = canonicalPhone(myProfile.uniqueId);
+          const rxId = canonicalPhone(newMsg.receiver_id || '');
+          const txId = canonicalPhone(newMsg.sender_id || '');
+          const activeId = canonicalPhone(activeChatRef.current);
 
           if (rxId === myId || txId === myId) {
             setMessages(prev => (prev.find(m => m.id === newMsg.id) ? prev : [...prev, newMsg]));
@@ -203,8 +209,8 @@ const ChatView = () => {
     const newMsg = { 
       id: tempId,
       text: message, 
-      sender_id: myProfile.uniqueId, 
-      receiver_id: activeContactId, 
+      sender_id: canonicalPhone(myProfile.uniqueId), 
+      receiver_id: canonicalPhone(activeContactId), 
       status: 'sending', 
       created_at: new Date().toISOString() 
     };
@@ -214,7 +220,7 @@ const ChatView = () => {
     setMessage('');
     
     // Update contact status if first chat
-    setContacts(prev => prev.map(c => cleanPhone(c.id) === cleanPhone(activeContactId) && c.status === 'Baru saja ditambahkan' ? { ...c, status: 'Sedang Chat' } : c));
+    setContacts(prev => prev.map(c => canonicalPhone(c.id) === canonicalPhone(activeContactId) && c.status === 'Baru saja ditambahkan' ? { ...c, status: 'Sedang Chat' } : c));
     
     const { data, error } = await supabase
       .from('messages')
@@ -312,7 +318,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.1</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.2</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
