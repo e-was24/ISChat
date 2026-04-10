@@ -32,9 +32,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.4.2', detail: 'Final Stable: Production Cleanup.' },
     { v: '1.4.1', detail: 'Zero-Format Dependency Sync (Robust IDs).' },
-    { v: '1.4.0', detail: 'Advanced Real-Time Debugging & RLS Fix.' },
-    { v: '1.3.9', detail: 'Real-Time Diagnostic & Sync Optimization.' }
+    { v: '1.4.0', detail: 'Advanced Real-Time Debugging & RLS Fix.' }
   ];
 
   // Auto-scroll to bottom
@@ -90,11 +90,9 @@ const ChatView = () => {
     const channel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
-        console.log('DEBUG: Full Real-time payload:', payload);
         if (payload.eventType === 'INSERT') {
           const newMsg = payload.new;
           
-          // SUPER ROBUST: Clean both before comparison
           const myCleanId = cleanPhone(myProfile.uniqueId);
           const rxCleanId = cleanPhone(newMsg.receiver_id || '');
           const txCleanId = cleanPhone(newMsg.sender_id || '');
@@ -103,14 +101,11 @@ const ChatView = () => {
           const isForMe = rxCleanId === myCleanId;
           const isFromMe = txCleanId === myCleanId;
           
-          console.log(`DEBUG: Canonical Check - ForMe: ${isForMe}, FromMe: ${isFromMe}, MyClean: ${myCleanId}, RxClean: ${rxCleanId}`);
-
           if (isForMe || isFromMe) {
             setMessages(prev => {
               if (prev.find(m => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
             });
-            // Auto mark as read if active
             if (isForMe && txCleanId === activeCleanId) {
               markAsRead(newMsg.id);
             }
@@ -121,12 +116,7 @@ const ChatView = () => {
           setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
         }
       })
-      .subscribe((status) => {
-        console.log('Supabase Real-time status:', status);
-        if (status === 'CHANNEL_ERROR') {
-          console.error('Real-time connection error. Check Supabase settings.');
-        }
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
@@ -266,7 +256,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.4.1</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.4.2</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
