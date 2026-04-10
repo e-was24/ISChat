@@ -8,6 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      devOptions: { enabled: true },
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
         name: 'ISChat',

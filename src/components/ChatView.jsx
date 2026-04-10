@@ -39,10 +39,31 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.5.5', detail: 'Force Cache Clear & Auto-Reload.' },
     { v: '1.5.4', detail: 'Mobile UI Fix: Input overlap & Asset Path Clean.' },
-    { v: '1.5.3', detail: 'Bug Fix: Profile Persistence Restore.' },
-    { v: '1.5.2', detail: 'Presence (Online), Notifications & Profile Photos.' }
+    { v: '1.5.3', detail: 'Bug Fix: Profile Persistence Restore.' }
   ];
+
+  const currentVersion = '1.5.5';
+
+  // Force cache clear on version mismatch
+  useEffect(() => {
+    const savedVer = localStorage.getItem('ischat_app_version');
+    if (savedVer && savedVer !== currentVersion) {
+      localStorage.setItem('ischat_app_version', currentVersion);
+      // Hard reload to clear PWA cache
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(registrations => {
+          for (let registration of registrations) registration.unregister();
+          window.location.reload(true);
+        });
+      } else {
+        window.location.reload(true);
+      }
+    } else {
+      localStorage.setItem('ischat_app_version', currentVersion);
+    }
+  }, []);
 
   useEffect(() => { activeChatRef.current = activeContactId; }, [activeContactId]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -232,7 +253,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.4</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.5.5</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
