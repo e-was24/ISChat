@@ -32,9 +32,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.3.8', detail: 'Real Read Status (Bulk Update) & Sync Fix.' },
     { v: '1.3.7', detail: 'Real-Time Fix: Standardized ID Format.' },
-    { v: '1.3.6', detail: 'Default view: Kontak (all devices).' },
-    { v: '1.3.5', detail: 'Smart Phone Formatting & Standard Unique ID.' }
+    { v: '1.3.6', detail: 'Default view: Kontak (all devices).' }
   ];
 
   // Auto-scroll to bottom
@@ -115,8 +115,23 @@ const ChatView = () => {
     };
   }, [myProfile.uniqueId, activeContactId]);
 
-  const markAsRead = async (messageId) => {
-    await supabase.from('messages').update({ status: 'read' }).eq('id', messageId);
+  // Bulk mark as read when chat is active
+  useEffect(() => {
+    if (!myProfile.uniqueId || !activeContactId || messages.length === 0) return;
+
+    const unreadIds = messages
+      .filter(m => m.receiver_id === myProfile.uniqueId && m.sender_id === activeContactId && m.status !== 'read')
+      .map(m => m.id);
+
+    if (unreadIds.length > 0) {
+      markAsRead(unreadIds);
+    }
+  }, [activeContactId, messages, myProfile.uniqueId]);
+
+  const markAsRead = async (ids) => {
+    const idList = Array.isArray(ids) ? ids : [ids];
+    if (idList.length === 0) return;
+    await supabase.from('messages').update({ status: 'read' }).in('id', idList);
   };
 
   const handleSend = async (e) => {
@@ -233,7 +248,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.3.7</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.3.8</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
