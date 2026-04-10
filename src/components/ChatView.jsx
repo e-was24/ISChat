@@ -10,45 +10,61 @@ import {
   MessageSquareIcon, 
   UsersIcon 
 } from './Icons';
+import { db } from '../utils/db';
 
 const ChatView = () => {
   const [message, setMessage] = useState('');
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [mobileView, setMobileView] = useState('messages'); // 'contacts' or 'messages'
+  const [mobileView, setMobileView] = useState('messages');
   const [newContact, setNewContact] = useState('');
   
-  const [contacts, setContacts] = useState([
-    { id: 'ai-init', name: 'Support Assistant', status: 'Online', avatar: 'AI' }
-  ]);
+  const [myProfile, setMyProfile] = useState({ name: '', uniqueId: '', status: '' });
+  const [contacts, setContacts] = useState([]);
   const [activeContactId, setActiveContactId] = useState('ai-init');
-  
-  const [messages, setMessages] = useState([
-    { id: 1, text: 'Halo! Selamat datang di ISChat v1.2.0. Ada yang bisa kami bantu?', sender: 'bot', contactId: 'ai-init' },
-    { id: 2, text: 'Ini adalah tampilan premium chat kami dengan fitur Profil & Mobile Nav.', sender: 'bot', contactId: 'ai-init' }
-  ]);
+  const [messages, setMessages] = useState([]);
 
   const versionHistory = [
+    { v: '1.3.0', detail: 'Data Persistence (DB), Fix Send Icon, & Unique User Numbers.' },
     { v: '1.2.0', detail: 'Fitur Profil, Nomor Unik, & Bottom Navigation (Mobile).' },
-    { v: '1.1.1', detail: 'Fitur Tambah Kontak & Manajemen Nomor.' },
-    { v: '1.1.0', detail: 'Implementasi Versi, History Update, & Chat Interface.' }
+    { v: '1.1.1', detail: 'Fitur Tambah Kontak & Manajemen Nomor.' }
   ];
 
-  const myProfile = {
-    name: 'Pengguna ISChat',
-    uniqueId: '+62 812-3456-7890',
-    status: 'Tersedia'
-  };
+  // Load initial data from DB
+  useEffect(() => {
+    const profile = db.getProfile();
+    const savedContacts = db.getContacts();
+    const savedMessages = db.getMessages();
+    
+    setMyProfile(profile);
+    setContacts(savedContacts);
+    setMessages(savedMessages);
+    
+    if (savedContacts.length > 0) {
+      setActiveContactId(savedContacts[0].id);
+    }
+  }, []);
+
+  // Save data to DB whenever it changes
+  useEffect(() => {
+    if (contacts.length > 0) db.saveContacts(contacts);
+  }, [contacts]);
+
+  useEffect(() => {
+    if (messages.length > 0) db.saveMessages(messages);
+  }, [messages]);
 
   const handleSend = (e) => {
     e.preventDefault();
     if (!message.trim()) return;
     
-    setMessages([...messages, { id: Date.now(), text: message, sender: 'user', contactId: activeContactId }]);
+    const newMsg = { id: Date.now(), text: message, sender: 'user', contactId: activeContactId, timestamp: new Date().toISOString() };
+    setMessages(prev => [...prev, newMsg]);
     setMessage('');
     
     setTimeout(() => {
-      setMessages(prev => [...prev, { id: Date.now() + 1, text: 'Sangat baik! Ada lagi yang ingin Anda tanyakan?', sender: 'bot', contactId: activeContactId }]);
+      const botMsg = { id: Date.now() + 1, text: 'Pesan terkirim dan tersimpan secara permanen! 🚀', sender: 'bot', contactId: activeContactId, timestamp: new Date().toISOString() };
+      setMessages(prev => [...prev, botMsg]);
     }, 1000);
   };
 
@@ -59,22 +75,21 @@ const ChatView = () => {
     const id = Date.now().toString();
     const formattedName = newContact.startsWith('+') ? newContact : `+${newContact}`;
     
-    setContacts([...contacts, { 
+    setContacts(prev => [...prev, { 
       id: id, 
       name: formattedName, 
       status: 'Baru ditambahkan',
-      avatar: '?'
+      avatar: Array.from(formattedName).filter(c => isNaN(parseInt(c))).join('') || '?'
     }]);
     setNewContact('');
-    alert(`Nomor ${formattedName} berhasil disimpan!`);
+    alert(`Nomor ${formattedName} berhasil disimpan ke daftar kontak!`);
   };
 
-  const activeContact = contacts.find(c => c.id === activeContactId) || contacts[0];
+  const activeContact = contacts.find(c => c.id === activeContactId) || contacts[0] || { avatar: '?', name: 'Unknown' };
   const activeMessages = messages.filter(m => m.contactId === activeContactId);
 
   return (
     <div className="chat-container">
-      {/* Sidebar - Hidden on mobile unless mobileView is 'contacts' */}
       <aside className={`chat-sidebar ${mobileView === 'contacts' ? 'mobile-active' : ''}`}>
         <div className="sidebar-header">
           <LogoIcon className="sidebar-logo" />
@@ -124,7 +139,7 @@ const ChatView = () => {
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
             <InfoIcon className="sidebar-icon" />
-            <span>v1.2.0</span>
+            <span>v1.3.0</span>
           </button>
           <button className="settings-btn">
             <SettingsIcon className="sidebar-icon" />
@@ -132,7 +147,6 @@ const ChatView = () => {
         </div>
       </aside>
 
-      {/* Main Chat Area - Hidden on mobile unless mobileView is 'messages' */}
       <main className={`chat-main ${mobileView === 'messages' ? 'mobile-active' : ''}`}>
         <header className="chat-header">
           <div className="active-contact">
@@ -163,42 +177,28 @@ const ChatView = () => {
         <form className="chat-input-area" onSubmit={handleSend}>
           <input 
             type="text" 
-            placeholder="Ketik pesan..." 
+            placeholder="Ketik pesan di sini..." 
             value={message}
             onChange={(e) => setMessage(e.target.value)}
           />
-          <button type="submit" className="send-btn">
+          <button type="submit" className="send-btn" aria-label="Send Message">
             <SendIcon className="btn-icon-svg" />
           </button>
         </form>
       </main>
 
-      {/* Mobile Bottom Navigation */}
       <nav className="mobile-bottom-nav">
-        <button 
-          className={`nav-item ${mobileView === 'contacts' ? 'active' : ''}`}
-          onClick={() => setMobileView('contacts')}
-        >
-          <UsersIcon className="nav-icon" />
-          <span>Kontak</span>
+        <button className={`nav-item ${mobileView === 'contacts' ? 'active' : ''}`} onClick={() => setMobileView('contacts')}>
+          <UsersIcon className="nav-icon" /> <span>Kontak</span>
         </button>
-        <button 
-          className={`nav-item ${mobileView === 'messages' ? 'active' : ''}`}
-          onClick={() => setMobileView('messages')}
-        >
-          <MessageSquareIcon className="nav-icon" />
-          <span>Pesan</span>
+        <button className={`nav-item ${mobileView === 'messages' ? 'active' : ''}`} onClick={() => setMobileView('messages')}>
+          <MessageSquareIcon className="nav-icon" /> <span>Pesan</span>
         </button>
-        <button 
-          className="nav-item"
-          onClick={() => setShowProfileModal(true)}
-        >
-          <UserIcon className="nav-icon" />
-          <span>Profil</span>
+        <button className="nav-item" onClick={() => setShowProfileModal(true)}>
+          <UserIcon className="nav-icon" /> <span>Profil</span>
         </button>
       </nav>
 
-      {/* Modals */}
       {showVersionModal && (
         <div className="modal-overlay" onClick={() => setShowVersionModal(false)}>
           <div className="modal-content glass-card" onClick={e => e.stopPropagation()}>
@@ -220,7 +220,7 @@ const ChatView = () => {
         <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
           <div className="modal-content glass-card profile-modal" onClick={e => e.stopPropagation()}>
             <div className="profile-header">
-              <div className="avatar-large">P</div>
+              <div className="avatar-large">{myProfile.name ? myProfile.name.charAt(0) : 'P'}</div>
               <h3>{myProfile.name}</h3>
               <p>{myProfile.status}</p>
             </div>
@@ -233,7 +233,7 @@ const ChatView = () => {
                   alert('Nomor disalin ke clipboard!');
                 }}>Salin</button>
               </div>
-              <p className="note">Bagikan nomor ini agar orang lain bisa menyimpan Anda sebagai kontak.</p>
+              <p className="note">Nomor ini dibuat khusus untuk Anda dan tersimpan secara permanen di perangkat ini.</p>
             </div>
             <button className="btn btn-primary" onClick={() => setShowProfileModal(false)}>Kembali</button>
           </div>

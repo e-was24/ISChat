@@ -253,7 +253,25 @@ h1 {
 
 .chat-input-area { padding: 1.5rem 2rem; display: flex; gap: 1rem; background: rgba(0, 0, 0, 0.1); border-top: 1px solid var(--glass-border); }
 .chat-input-area input { flex: 1; padding: 0.75rem 1.5rem; border-radius: 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); color: white; outline: none; }
-.send-btn { padding: 0.75rem; border-radius: 12px; background: var(--primary); border: none; color: white; cursor: pointer; }
+.send-btn {
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: var(--primary);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.send-btn .btn-icon-svg {
+  width: 22px;
+  height: 22px;
+  color: white;
+  display: block;
+}
+
 
 /* Mobile Bottom Nav */
 .mobile-bottom-nav {
