@@ -21,7 +21,7 @@ const ChatView = () => {
   const [message, setMessage] = useState('');
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [mobileView, setMobileView] = useState('messages');
+  const [mobileView, setMobileView] = useState('contacts'); // Default to contacts
   const [newContact, setNewContact] = useState('');
   
   const [myProfile, setMyProfile] = useState({ name: '', uniqueId: '', status: '' });
@@ -32,9 +32,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
-    { v: '1.3.3', detail: 'Persistent Deletion, Real Read Status, & Scroll Fix.' },
-    { v: '1.3.2', detail: 'Real-Time Supabase, Deletion (Contact/Msg), & Mobile Tweak.' },
-    { v: '1.3.1', detail: 'Message Status Indicators (Checkmarks) & Supabase Ready.' }
+    { v: '1.3.6', detail: 'Default view: Kontak (all devices).' },
+    { v: '1.3.5', detail: 'Smart Phone Formatting & Standard Unique ID.' },
+    { v: '1.3.3', detail: 'Persistent Deletion & Real Read Status.' }
   ];
 
   // Auto-scroll to bottom
@@ -219,7 +219,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.3.3</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.3.6</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
