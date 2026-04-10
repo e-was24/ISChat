@@ -15,7 +15,7 @@ import {
 } from './Icons';
 import { db } from '../utils/db';
 import { supabase } from '../supabase';
-import { formatPhoneInput, canonicalPhone } from '../utils/format';
+import { formatPhoneInput, canonicalPhone, cleanPhone } from '../utils/format';
 
 const ChatView = () => {
   const [message, setMessage] = useState('');
@@ -32,9 +32,9 @@ const ChatView = () => {
   const messagesEndRef = useRef(null);
 
   const versionHistory = [
+    { v: '1.4.1', detail: 'Zero-Format Dependency Sync (Robust IDs).' },
     { v: '1.4.0', detail: 'Advanced Real-Time Debugging & RLS Fix.' },
-    { v: '1.3.9', detail: 'Real-Time Diagnostic & Sync Optimization.' },
-    { v: '1.3.8', detail: 'Real Read Status (Bulk Update) & Sync Fix.' }
+    { v: '1.3.9', detail: 'Real-Time Diagnostic & Sync Optimization.' }
   ];
 
   // Auto-scroll to bottom
@@ -93,10 +93,17 @@ const ChatView = () => {
         console.log('DEBUG: Full Real-time payload:', payload);
         if (payload.eventType === 'INSERT') {
           const newMsg = payload.new;
-          const isForMe = newMsg.receiver_id === myProfile.uniqueId;
-          const isFromMe = newMsg.sender_id === myProfile.uniqueId;
           
-          console.log(`DEBUG: Filter Check - ForMe: ${isForMe}, FromMe: ${isFromMe}, MyID: ${myProfile.uniqueId}, RxID: ${newMsg.receiver_id}`);
+          // SUPER ROBUST: Clean both before comparison
+          const myCleanId = cleanPhone(myProfile.uniqueId);
+          const rxCleanId = cleanPhone(newMsg.receiver_id || '');
+          const txCleanId = cleanPhone(newMsg.sender_id || '');
+          const activeCleanId = cleanPhone(activeContactId);
+
+          const isForMe = rxCleanId === myCleanId;
+          const isFromMe = txCleanId === myCleanId;
+          
+          console.log(`DEBUG: Canonical Check - ForMe: ${isForMe}, FromMe: ${isFromMe}, MyClean: ${myCleanId}, RxClean: ${rxCleanId}`);
 
           if (isForMe || isFromMe) {
             setMessages(prev => {
@@ -104,7 +111,7 @@ const ChatView = () => {
               return [...prev, newMsg];
             });
             // Auto mark as read if active
-            if (isForMe && newMsg.sender_id === activeContactId) {
+            if (isForMe && txCleanId === activeCleanId) {
               markAsRead(newMsg.id);
             }
           }
@@ -259,7 +266,7 @@ const ChatView = () => {
 
         <div className="sidebar-footer">
           <button className="version-btn" onClick={() => setShowVersionModal(true)}>
-            <InfoIcon className="sidebar-icon" /> <span>v1.4.0</span>
+            <InfoIcon className="sidebar-icon" /> <span>v1.4.1</span>
           </button>
           <button className="settings-btn"> <SettingsIcon className="sidebar-icon" /> </button>
         </div>
