@@ -8,7 +8,6 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      strategies: 'generateSW',
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
         name: 'ISChat',
@@ -36,12 +35,12 @@ export default defineConfig({
           }
         ]
       },
-      devOptions: {
-        enabled: true
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
       }
     })
   ],
 })
-
-
-
