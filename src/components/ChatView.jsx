@@ -39,12 +39,12 @@ const ChatView = () => {
   const activeChatRef = useRef('');
 
   const versionHistory = [
+    { v: '1.6.4', detail: 'Visibility: High-contrast Phone Numbers & UI Polish.' },
     { v: '1.6.3', detail: 'Profile Sync: Shared Avatars via Presence & Pro Profile.' },
-    { v: '1.6.2', detail: 'Sync Fix: Enforced canonical phone format (+62).' },
-    { v: '1.6.1', detail: 'Stability Patch: Fixed Checkmarks & Profile UI.' }
+    { v: '1.6.2', detail: 'Sync Fix: Enforced canonical phone format (+62).' }
   ];
 
-  const currentVersion = '1.6.3';
+  const currentVersion = '1.6.4';
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -328,7 +328,7 @@ const ChatView = () => {
         </div>
 
         <div className="sidebar-footer">
-          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.3</span></button>
+          <button className="version-btn" onClick={() => setShowVersionModal(true)}><InfoIcon className="sidebar-icon" /> <span>v1.6.4</span></button>
           <button className="settings-btn"><SettingsIcon className="sidebar-icon" /></button>
         </div>
       </aside>
