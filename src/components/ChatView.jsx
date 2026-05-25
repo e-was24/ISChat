@@ -857,6 +857,7 @@ const ChatView = () => {
     }
   };
 
+  // === FUNGSI KIRIM PESAN FIX (MENDUKUNG COLOM PLAIN_TEXT DI POV PENGIRIM) ===
   const handleSend = async (e) => {
     e.preventDefault();
     if (!message.trim() || !activeContactId) return;
@@ -873,7 +874,7 @@ const ChatView = () => {
     const newMsg = {
       id: tempId,
       text: encryptedText,
-      plain_text: plainText,
+      plain_text: plainText, // Cadangan lokal pengirim
       sender_id: canonicalPhone(myProfile.uniqueId),
       receiver_id: canonicalPhone(activeContactId),
       status: "sending",
@@ -893,11 +894,13 @@ const ChatView = () => {
       ),
     );
 
+    // === PROSES INSERT KE CLOUD SUPABASE (FIXED) ===
     const { data, error } = await supabase
       .from("messages")
       .insert([
         {
           text: newMsg.text,
+          plain_text: newMsg.plain_text, // <-- FIX: Masukkan plain_text agar tersimpan permanen di cloud
           sender_id: newMsg.sender_id,
           receiver_id: newMsg.receiver_id,
           status: "sent",
@@ -916,8 +919,19 @@ const ChatView = () => {
         100,
       );
     } else if (data && data[0]) {
+      // Petakan ID database asli ke cache teks asli biar tidak berkedip / hilang
       setDecryptedMessages((prev) => ({ ...prev, [data[0].id]: plainText }));
-      setMessages((prev) => prev.map((m) => (m.id === tempId ? data[0] : m)));
+
+      // FIX: Gabungkan data dari cloud dengan properti plain_text lokal kita
+      // agar state lokal tidak kehilangan teks asli saat beralih dari ID sementara ke ID database asli
+      const finalCloudMsg = {
+        ...data[0],
+        plain_text: plainText,
+      };
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? finalCloudMsg : m)),
+      );
     }
   };
 
