@@ -857,34 +857,57 @@ const ChatView = () => {
     }
   };
 
-  // === FUNGSI KIRIM PESAN FIX (MENDUKUNG COLOM PLAIN_TEXT DI POV PENGIRIM) ===
+  // ====================================================================
+  // FUNGSI SEND VERSI PENDING QUEUE & AUTO-BUILD NOTIFICATION (FULL CODE)
+  // ====================================================================
   const handleSend = async (e) => {
     e.preventDefault();
     if (!message.trim() || !activeContactId) return;
 
-    if (!activePublicKey) {
-      alert("Gagal mengirim: Menunggu kunci enkripsi penerima aman...");
-      return;
-    }
-
     const plainText = message;
     const tempId = `temp-${Date.now()}`;
-    const encryptedText = await encryptMessage(plainText, activePublicKey);
+    let encryptedText = "";
+    let initialStatus = "sent"; // Status standar jika E2EE siap
 
+    // JIKA KUNCI PENERIMA BELUM SIAP (USER BARU / LAMA BELUM SYNC)
+    if (!activePublicKey || activePublicKey.trim() === "") {
+      console.log(
+        "Kunci penerima belum siap. Memasukkan pesan ke antrean pending...",
+      );
+
+      // Bungkus teks asli ke dalam format JSON tiruan berstruktur aman
+      encryptedText = JSON.stringify({
+        type: "PENDING_QUEUE",
+        raw_text: plainText,
+      });
+      initialStatus = "pending"; // Set status antrean ke database cloud
+    } else {
+      // JIKA KUNCI TARGET SUDAH AMAN (NORMAL HYBRID E2EE FLOW)
+      try {
+        encryptedText = await encryptMessage(plainText, activePublicKey);
+      } catch (encryptError) {
+        console.error("Gagal melakukan enkripsi hibrida:", encryptError);
+        encryptedText = plainText; // Fallback darurat jika Web Crypto API mendadak gagal
+      }
+    }
+
+    // Buat objek data pesan untuk state React internal (Optimistic UI Update)
     const newMsg = {
       id: tempId,
       text: encryptedText,
-      plain_text: plainText, // Cadangan lokal pengirim
+      plain_text: plainText, // Cadangan teks murni agar pov pengirim tidak berubah jadi text kunci
       sender_id: canonicalPhone(myProfile.uniqueId),
       receiver_id: canonicalPhone(activeContactId),
-      status: "sending",
+      status: initialStatus === "pending" ? "pending" : "sending",
       created_at: new Date().toISOString(),
     };
 
+    // Tampilkan pesan secara instan ke layar chat pengirim agar terasa responsif
     setDecryptedMessages((prev) => ({ ...prev, [tempId]: plainText }));
     setMessages((prev) => [...prev, newMsg]);
     setMessage("");
 
+    // Perbarui label status kontak jika kontak ini berstatus 'Baru saja ditambahkan'
     setContacts((prev) =>
       prev.map((c) =>
         canonicalPhone(c.id) === canonicalPhone(activeContactId) &&
@@ -894,23 +917,24 @@ const ChatView = () => {
       ),
     );
 
-    // === PROSES INSERT KE CLOUD SUPABASE (FIXED) ===
+    // === PROSES INSERT DATA SEBENARNYA KE SUPABASE CLOUD ===
     const { data, error } = await supabase
       .from("messages")
       .insert([
         {
           text: newMsg.text,
-          plain_text: newMsg.plain_text, // <-- FIX: Masukkan plain_text agar tersimpan permanen di cloud
+          plain_text: newMsg.plain_text, // Disimpan ke kolom plain_text baru sebagai mirror pengirim
           sender_id: newMsg.sender_id,
           receiver_id: newMsg.receiver_id,
-          status: "sent",
+          status: initialStatus, // Mengirim string 'pending' atau 'sent'
           created_at: newMsg.created_at,
         },
       ])
       .select();
 
     if (error) {
-      console.error("Send Error:", error);
+      console.error("Send Error via Supabase:", error);
+      // Jika internet putus atau server error, tandai pesan dengan indikator merah (error)
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? { ...m, status: "error" } : m)),
       );
@@ -919,16 +943,17 @@ const ChatView = () => {
         100,
       );
     } else if (data && data[0]) {
-      // Petakan ID database asli ke cache teks asli biar tidak berkedip / hilang
+      // Pasangkan ID database asli ke cache teks dekripsi pengirim agar tidak kedip-kedip
       setDecryptedMessages((prev) => ({ ...prev, [data[0].id]: plainText }));
 
-      // FIX: Gabungkan data dari cloud dengan properti plain_text lokal kita
-      // agar state lokal tidak kehilangan teks asli saat beralih dari ID sementara ke ID database asli
+      // Gabungkan data respons cloud dengan teks murni lokal
+      // Langkah ini krusial agar chat pengirim tidak berubah jadi kode gembok setelah terkirim
       const finalCloudMsg = {
         ...data[0],
         plain_text: plainText,
       };
 
+      // Ganti objek ID sementara (tempId) dengan data permanen dari database
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? finalCloudMsg : m)),
       );
