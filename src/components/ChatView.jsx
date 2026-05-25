@@ -147,10 +147,11 @@ const ChatView = () => {
     setMessages(db.getMessages());
     if (canonContacts.length > 0) setActiveContactId(canonContacts[0].id);
 
+    // 3. Jalankan fungsi proteksi sidik jari device ke cloud Supabase (Auto Migrasi User Lama)
     const lockDeviceToProfile = async () => {
       const fingerprint = getDeviceFingerprint();
 
-      // JIKA LOKAL KOSONG: Pulihkan akun lama berdasarkan sidik jari browser
+      // KONDISI A: Jika data lokal kosong melongpong (Habis di-refresh kosong / Clear Cache)
       if (!canonProfile.uniqueId || canonProfile.uniqueId.trim() === "") {
         console.log(
           "LocalStorage kosong/belum siap. Mencari nomor berdasarkan Device Fingerprint...",
@@ -178,17 +179,33 @@ const ChatView = () => {
         }
       }
 
-      // JIKA LOKAL ADA: Pasang state dan ikat sidik jarinya ke cloud
+      // KONDISI B & C: Jika di lokal ada nomor HP-nya
       if (canonProfile.uniqueId && canonProfile.uniqueId.trim() !== "") {
         setMyProfile(canonProfile);
 
-        await supabase.from("profiles").upsert({
-          id: canonProfile.uniqueId,
-          name: canonProfile.name,
-          avatar: canonProfile.avatar,
-          device_fingerprint: fingerprint,
-          updated_at: new Date().toISOString(),
-        });
+        // 1. Cek dulu ke cloud apakah nomor ini sudah punya device_fingerprint atau belum
+        const { data: cloudData } = await supabase
+          .from("profiles")
+          .select("device_fingerprint")
+          .eq("id", canonProfile.uniqueId)
+          .maybeSingle();
+
+        // 2. Jika di cloud belum ada sidik jarinya (Kondisi User Lama), langsung UPDATE otomatis di background!
+        if (!cloudData || !cloudData.device_fingerprint) {
+          console.log(
+            "User lama terdeteksi belum punya fingerprint. Menjalankan silent auto-update...",
+          );
+          await supabase.from("profiles").upsert({
+            id: canonProfile.uniqueId,
+            name: canonProfile.name,
+            avatar: canonProfile.avatar,
+            device_fingerprint: fingerprint, // Langsung dikunci ke device ini
+            updated_at: new Date().toISOString(),
+          });
+          console.log(
+            "Fingerprint berhasil dipasang serentak untuk user lama.",
+          );
+        }
       }
     };
 
