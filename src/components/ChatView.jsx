@@ -366,20 +366,38 @@ const ChatView = () => {
 
   const versionHistory = [
     {
+      v: "1.7.2",
+      detail:
+        "Fix: Resolved profile photo re-upload blank screen issue and added Base64 HTML fallbacks.",
+    },
+    {
+      v: "1.7.1",
+      detail:
+        "Security: Moved admin password to Vercel Env and implemented 7-click hidden trigger.",
+    },
+    {
+      v: "1.7.0",
+      detail:
+        "Admin: Added secure User Management Panel with manual Fingerprint Creator for legacy users.",
+    },
+    {
+      v: "1.6.9",
+      detail:
+        "Anti-Lost: Implemented silent device fingerprint tracking to prevent empty number overrides on refresh.",
+    },
+    {
+      v: "1.6.8",
+      detail:
+        "E2EE: Patched infinite-loop decryption crash and optimized real-time channel subscription order.",
+    },
+    {
       v: "1.6.5",
-      detail: "Security: End-to-End Encryption (E2EE) Implementation.",
-    },
-    {
-      v: "1.6.4",
-      detail: "Visibility: High-contrast Phone Numbers & UI Polish.",
-    },
-    {
-      v: "1.6.3",
-      detail: "Profile Sync: Shared Avatars via Presence & Pro Profile.",
+      detail:
+        "Security: Initial End-to-End Encryption (E2EE) Implementation using Web Crypto API.",
     },
   ];
 
-  const currentVersion = "1.6.8"; // Dinaikkan ke 1.6.8 agar memaksa PWA memperbarui cache rusak
+  const currentVersion = "1.7.2";
 
   // Force cache clear on version mismatch
   useEffect(() => {
