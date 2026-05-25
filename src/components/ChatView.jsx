@@ -171,21 +171,17 @@ const ChatView = () => {
   useEffect(() => {
     db.saveMessages(messages);
   }, [messages]);
-
   // ====================================================================
-  // 1. BLOK INISIALISASI KUNCI USER (VERSI FIX ANTI-REFRESH / RESET)
+  // 1. BLOK INISIALISASI KUNCI USER (VERSI AMAN ANTI-RESET)
   // ====================================================================
   useEffect(() => {
     const initE2EE = async () => {
-      // Proteksi 1: Jika nomor HP belum termuat dari local DB (masih kosong), JANGAN LANJUT!
       if (!myProfile.uniqueId || myProfile.uniqueId.trim() === "") return;
 
       const myCanonId = canonicalPhone(myProfile.uniqueId);
-
       let privKey = localStorage.getItem("ischat_private_key");
       let pubKey = localStorage.getItem("ischat_public_key");
 
-      // Proteksi 2: Benar-benar cek apakah kunci kosong di browser sebelum bikin baru
       if (!privKey || !pubKey) {
         console.log(
           "Memicu generate E2EE Key Pair pertama kali untuk nomor:",
@@ -198,43 +194,26 @@ const ChatView = () => {
 
           localStorage.setItem("ischat_private_key", privKey);
           localStorage.setItem("ischat_public_key", pubKey);
-          console.log(
-            "Key pair baru sukses disimpan secara permanen di browser.",
-          );
         } catch (cryptoError) {
           console.error("Gagal auto-generate key:", cryptoError);
           return;
         }
-      } else {
-        console.log(
-          "Kunci lama ditemukan di browser. Menggunakan kunci yang sudah ada (Anti-Reset teraktifkan).",
-        );
       }
 
       setMyPrivateKey(privKey);
 
-      // Selalu sinkronisasikan public key ke database Supabase agar user lain bisa mengambilnya
-      const { error } = await supabase.from("user_keys").upsert({
+      await supabase.from("user_keys").upsert({
         phone_id: myCanonId,
         public_key: pubKey,
         updated_at: new Date().toISOString(),
       });
-
-      if (error) {
-        console.error("Gagal sinkronisasi public key ke Supabase:", error);
-      } else {
-        console.log(
-          "Auto-sync public key ke Supabase sukses untuk:",
-          myCanonId,
-        );
-      }
     };
 
     initE2EE();
-  }, [myProfile.uniqueId]); // Hanya terpicu ketika uniqueId sukses termuat ke aplikasi
+  }, [myProfile.uniqueId]);
 
   // ====================================================================
-  // 2. BLOK MENGAMBIL KUNCI PENERIMA (Biarkan tetap seperti ini)
+  // 2. BLOK MENGAMBIL KUNCI PENERIMA CHAT AKTIF
   // ====================================================================
   useEffect(() => {
     const fetchReceiverKey = async () => {
@@ -243,7 +222,7 @@ const ChatView = () => {
         return;
       }
       const targetId = canonicalPhone(activeContactId);
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("user_keys")
         .select("public_key")
         .eq("phone_id", targetId)
@@ -253,9 +232,6 @@ const ChatView = () => {
         setActivePublicKey(data.public_key);
       } else {
         setActivePublicKey("");
-        console.warn(
-          "Target user belum mengaktifkan E2EE atau tidak ditemukan.",
-        );
       }
     };
 
@@ -263,7 +239,7 @@ const ChatView = () => {
   }, [activeContactId]);
 
   // ====================================================================
-  // 3. BLOK DEKRIPSI SEMUA PESAN (Biarkan tetap seperti ini)
+  // 3. BLOK DEKRIPSI SEMUA PESAN (VERSI FIX ANTI-LOOP / ANTI-REFRESH)
   // ====================================================================
   useEffect(() => {
     const decryptAll = async () => {
@@ -273,9 +249,8 @@ const ChatView = () => {
       let updated = false;
 
       for (const msg of messages) {
-        if (!newDecrypted[msg.id]) {
-          // Jika pesan berupa JSON terenkripsi, dekripsi. Jika teks biasa, biarkan lolos.
-          if (msg.text.startsWith('{"encryptedText"')) {
+        if (newDecrypted[msg.id] === undefined) {
+          if (msg.text && msg.text.startsWith('{"encryptedText"')) {
             newDecrypted[msg.id] = await decryptMessage(msg.text, myPrivateKey);
           } else {
             newDecrypted[msg.id] = msg.text;
@@ -290,7 +265,157 @@ const ChatView = () => {
     };
 
     decryptAll();
-  }, [messages, myPrivateKey, decryptedMessages]);
+    // PERBAIKAN: decryptedMessages DIHAPUS dari array ini untuk mencegah crash saat refresh!
+  }, [messages, myPrivateKey]);
+
+  // ====================================================================
+  // 4. REALTIME LOGIC (PRESENCE & MESSAGES + AUTO UPDATE PROFIL LAWAN CHAT)
+  // ====================================================================
+  useEffect(() => {
+    if (!myProfile.uniqueId) return;
+    const myCanonId = canonicalPhone(myProfile.uniqueId);
+
+    // Initial Fetch riwayat chat
+    const fetchMessages = async () => {
+      const { data } = await supabase
+        .from("messages")
+        .select("*")
+        .or(`sender_id.eq."${myCanonId}",receiver_id.eq."${myCanonId}"`)
+        .order("created_at", { ascending: true });
+      if (data) {
+        setMessages((prev) => {
+          const map = new Map(prev.map((m) => [m.id, m]));
+          data.forEach((m) => map.set(m.id, m));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(a.created_at) - new Date(b.created_at),
+          );
+        });
+      }
+    };
+    fetchMessages();
+
+    // Presence Channel
+    const presenceChannel = supabase.channel("online-presence", {
+      config: { presence: { key: cleanPhone(myProfile.uniqueId) } },
+    });
+
+    presenceChannel
+      .on("presence", { event: "sync" }, () => {
+        const newState = presenceChannel.presenceState();
+        setOnlineUsers(newState);
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await presenceChannel.track({
+            online_at: new Date().toISOString(),
+            name: myProfile.name,
+            avatar: myProfile.avatar,
+          });
+        }
+      });
+
+    // Messages Channel + Live Profile Sync
+    const msgChannel = supabase
+      .channel("db-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages" },
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const newMsg = payload.new;
+            const myId = canonicalPhone(myProfile.uniqueId);
+            const rxId = canonicalPhone(newMsg.receiver_id || "");
+            const txId = canonicalPhone(newMsg.sender_id || "");
+            const activeId = canonicalPhone(activeChatRef.current);
+
+            if (rxId === myId || txId === myId) {
+              setMessages((prev) =>
+                prev.find((m) => m.id === newMsg.id) ? prev : [...prev, newMsg],
+              );
+
+              if (rxId === myId) {
+                // === FITUR AUTO-UPDATE PROFIL DI HP USER LAIN ===
+                // Tarik profil terbaru si pengirim dari tabel profiles cloud
+                const { data: cloudProf } = await supabase
+                  .from("profiles")
+                  .select("name, avatar")
+                  .eq("id", txId)
+                  .single();
+
+                setContacts((prev) => {
+                  const txIdClean = cleanPhone(txId);
+                  const existing = prev.find(
+                    (c) => cleanPhone(c.id) === txIdClean,
+                  );
+
+                  // Ambil data profil terbaru dari cloud, jika tidak ada pakai data lama/default
+                  const liveName =
+                    cloudProf?.name ||
+                    (existing ? existing.name : formatPhoneInput(txId));
+                  const liveAvatar =
+                    cloudProf?.avatar || (existing ? existing.avatar : "?");
+
+                  if (!existing) {
+                    return [
+                      ...prev,
+                      {
+                        id: txId,
+                        name: liveName,
+                        avatar: liveAvatar,
+                        status: "Sedang Chat",
+                      },
+                    ];
+                  } else {
+                    // Jika kontak sudah ada, ganti nama dan fotonya secara otomatis dengan data cloud terbaru!
+                    return prev.map((c) =>
+                      cleanPhone(c.id) === txIdClean
+                        ? {
+                            ...c,
+                            name: liveName,
+                            avatar: liveAvatar,
+                            status: "Sedang Chat",
+                          }
+                        : c,
+                    );
+                  }
+                });
+
+                // E2EE Push Notification Text Dekripsi
+                let notifBody = newMsg.text;
+                if (newMsg.text.startsWith('{"encryptedText"')) {
+                  const privKey = localStorage.getItem("ischat_private_key");
+                  notifBody = await decryptMessage(newMsg.text, privKey);
+                }
+
+                if (
+                  txId !== activeId &&
+                  Notification.permission === "granted"
+                ) {
+                  new Notification("Pesan Baru", {
+                    body: notifBody,
+                    icon: "/pwa-192x192.png",
+                  });
+                }
+
+                if (txId === activeId) markAsRead(newMsg.id);
+              }
+            }
+          } else if (payload.eventType === "UPDATE") {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === payload.new.id ? payload.new : m)),
+            );
+          } else if (payload.eventType === "DELETE") {
+            setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(presenceChannel);
+      supabase.removeChannel(msgChannel);
+    };
+  }, [myProfile.uniqueId]);
 
   // Presence & Messages logic
   useEffect(() => {
