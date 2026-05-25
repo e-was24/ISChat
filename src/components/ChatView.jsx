@@ -20,7 +20,6 @@ import { supabase } from "../supabase";
 import { formatPhoneInput, canonicalPhone, cleanPhone } from "../utils/format";
 
 // === E2EE LOGIC ===
-// Import fungsi crypto yang sudah kita buat sebelumnya
 import {
   generateKeyPair,
   encryptMessage,
@@ -48,10 +47,30 @@ const ChatView = () => {
   const [deletedIds, setDeletedIds] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState({});
 
-  // === E2EE LOGIC ===
+  // === FUNGSI GENERATE DEVICE FINGERPRINT (ANTI-CLEAR CACHE / ANTI-LOST) ===
+  const getDeviceFingerprint = () => {
+    const navigatorInfo =
+      window.navigator.userAgent + window.navigator.language;
+    const screenInfo =
+      window.screen.width +
+      "x" +
+      window.screen.height +
+      "x" +
+      window.screen.colorDepth;
+    const rawString = `${navigatorInfo}|${screenInfo}`;
+    let hash = 0;
+    for (let i = 0; i < rawString.length; i++) {
+      const char = rawString.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash |= 0;
+    }
+    return "dev-" + Math.abs(hash);
+  };
+
+  // === E2EE LOGIC STATES ===
   const [myPrivateKey, setMyPrivateKey] = useState("");
-  const [activePublicKey, setActivePublicKey] = useState(""); // Menyimpan public key target chat
-  const [decryptedMessages, setDecryptedMessages] = useState({}); // Menyimpan teks yang sudah didekripsi cache
+  const [activePublicKey, setActivePublicKey] = useState("");
+  const [decryptedMessages, setDecryptedMessages] = useState({});
 
   const messagesEndRef = useRef(null);
   const activeChatRef = useRef("");
@@ -71,7 +90,7 @@ const ChatView = () => {
     },
   ];
 
-  const currentVersion = "1.6.6";
+  const currentVersion = "1.6.8"; // Dinaikkan ke 1.6.8 agar memaksa PWA memperbarui cache rusak
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -94,6 +113,7 @@ const ChatView = () => {
   useEffect(() => {
     activeChatRef.current = activeContactId;
   }, [activeContactId]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, decryptedMessages]);
@@ -105,7 +125,9 @@ const ChatView = () => {
     }
   }, []);
 
-  // Load initial (Ambil dari lokal dulu, lalu sync data profil dari Cloud)
+  // ====================================================================
+  // LOAD INITIAL & CLOUD PROFILE RESTORE (ANTI-LOST)
+  // ====================================================================
   useEffect(() => {
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
@@ -113,46 +135,64 @@ const ChatView = () => {
 
     const canonProfile = {
       ...profile,
-      uniqueId: canonicalPhone(profile.uniqueId),
+      uniqueId: profile?.uniqueId ? canonicalPhone(profile.uniqueId) : "",
     };
     const canonContacts = savedContacts.map((c) => ({
       ...c,
       id: canonicalPhone(c.id),
     }));
 
-    setMyProfile(canonProfile);
     setContacts(canonContacts);
     setDeletedIds(savedIds);
     setMessages(db.getMessages());
     if (canonContacts.length > 0) setActiveContactId(canonContacts[0].id);
 
-    // === TAMBAHAN LOGIKA SINKRONISASI CLOUD ===
-    // Ambil data profil terbaru dari Supabase jika uniqueId sudah ada
-    const fetchLatestCloudProfile = async () => {
-      if (!canonProfile.uniqueId) return;
+    const lockDeviceToProfile = async () => {
+      const fingerprint = getDeviceFingerprint();
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("name, avatar")
-        .eq("id", canonProfile.uniqueId)
-        .single();
+      // JIKA LOKAL KOSONG: Pulihkan akun lama berdasarkan sidik jari browser
+      if (!canonProfile.uniqueId || canonProfile.uniqueId.trim() === "") {
+        console.log(
+          "LocalStorage kosong/belum siap. Mencari nomor berdasarkan Device Fingerprint...",
+        );
 
-      if (data && !error) {
-        // Jika di cloud ada data profil terbaru, update state dan lokal memori kamu
-        setMyProfile((prev) => {
-          const updatedProfile = {
-            ...prev,
-            name: data.name || prev.name,
-            avatar: data.avatar || prev.avatar,
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, name, avatar")
+          .eq("device_fingerprint", fingerprint)
+          .maybeSingle();
+
+        if (data && !error) {
+          const restoredProfile = {
+            uniqueId: data.id,
+            name: data.name || "User " + data.id.slice(-4),
+            avatar: data.avatar || "?",
           };
-          db.saveProfile(updatedProfile); // Simpan ke local storage juga biar permanen
-          return updatedProfile;
+          setMyProfile(restoredProfile);
+          db.saveProfile(restoredProfile);
+          console.log(
+            "Sukses memulihkan nomor lama untuk device ini:",
+            data.id,
+          );
+          return;
+        }
+      }
+
+      // JIKA LOKAL ADA: Pasang state dan ikat sidik jarinya ke cloud
+      if (canonProfile.uniqueId && canonProfile.uniqueId.trim() !== "") {
+        setMyProfile(canonProfile);
+
+        await supabase.from("profiles").upsert({
+          id: canonProfile.uniqueId,
+          name: canonProfile.name,
+          avatar: canonProfile.avatar,
+          device_fingerprint: fingerprint,
+          updated_at: new Date().toISOString(),
         });
-        console.log("Profil berhasil disinkronkan dari Cloud Supabase!");
       }
     };
 
-    fetchLatestCloudProfile();
+    lockDeviceToProfile();
   }, []);
 
   useEffect(() => {
@@ -163,7 +203,6 @@ const ChatView = () => {
     db.saveDeletedMessages(deletedIds);
   }, [deletedIds]);
 
-  // Sync profil kamu ke Local DB dan Cloud Supabase secara permanen
   useEffect(() => {
     db.saveProfile(myProfile);
   }, [myProfile]);
@@ -171,6 +210,7 @@ const ChatView = () => {
   useEffect(() => {
     db.saveMessages(messages);
   }, [messages]);
+
   // ====================================================================
   // 1. BLOK INISIALISASI KUNCI USER (VERSI AMAN ANTI-RESET)
   // ====================================================================
@@ -239,7 +279,7 @@ const ChatView = () => {
   }, [activeContactId]);
 
   // ====================================================================
-  // 3. BLOK DEKRIPSI SEMUA PESAN (VERSI FIX ANTI-LOOP / ANTI-REFRESH)
+  // 3. BLOK DEKRIPSI SEMUA PESAN (VERSI FIX ANTI-LOOP)
   // ====================================================================
   useEffect(() => {
     const decryptAll = async () => {
@@ -265,17 +305,15 @@ const ChatView = () => {
     };
 
     decryptAll();
-    // PERBAIKAN: decryptedMessages DIHAPUS dari array ini untuk mencegah crash saat refresh!
   }, [messages, myPrivateKey]);
 
   // ====================================================================
-  // 4. REALTIME LOGIC (PRESENCE & MESSAGES + AUTO UPDATE PROFIL FIX 100%)
+  // 4. REALTIME LOGIC (PRESENCE & LIVE REALTIME PROFILE AUTO-UPDATE)
   // ====================================================================
   useEffect(() => {
     if (!myProfile.uniqueId) return;
     const myCanonId = canonicalPhone(myProfile.uniqueId);
 
-    // Initial Fetch riwayat chat awal
     const fetchMessages = async () => {
       const { data } = await supabase
         .from("messages")
@@ -294,7 +332,7 @@ const ChatView = () => {
     };
     fetchMessages();
 
-    // === PRESENCE CHANNEL FIX: .on DULUAN, .subscribe DI PALING BAWAH ===
+    // Urutan pendaftaran .on dulu baru .subscribe (ANTI-CRASH)
     const presenceChannel = supabase.channel("online-presence", {
       config: { presence: { key: cleanPhone(myProfile.uniqueId) } },
     });
@@ -314,7 +352,6 @@ const ChatView = () => {
         }
       });
 
-    // Messages Channel + Live Profile Sync
     const msgChannel = supabase
       .channel("db-changes")
       .on(
@@ -334,15 +371,14 @@ const ChatView = () => {
               );
 
               if (rxId === myId) {
-                // === FIX ERROR 406: Gunakan format id yang bersih untuk query Supabase ===
-                // Kita gunakan target ID yang sudah distandarkan
                 const targetQueryId = canonicalPhone(txId);
 
+                // Tarik profil paling update milik pengirim dari cloud secara live
                 const { data: cloudProf } = await supabase
                   .from("profiles")
                   .select("name, avatar")
-                  .eq("id", targetQueryId) // Query aman tanpa tanda aneh
-                  .maybeSingle(); // Menggunakan maybeSingle agar tidak crash jika profil belum ada
+                  .eq("id", targetQueryId)
+                  .maybeSingle();
 
                 setContacts((prev) => {
                   const txIdClean = cleanPhone(txId);
@@ -380,7 +416,6 @@ const ChatView = () => {
                   }
                 });
 
-                // E2EE Push Notification Text Dekripsi
                 let notifBody = newMsg.text;
                 if (newMsg.text.startsWith('{"encryptedText"')) {
                   const privKey = localStorage.getItem("ischat_private_key");
@@ -450,32 +485,25 @@ const ChatView = () => {
     e.preventDefault();
     if (!message.trim() || !activeContactId) return;
 
-    // === E2EE LOGIC ===
-    // Pastikan Public Key penerima sudah siap ditarik
     if (!activePublicKey) {
       alert("Gagal mengirim: Menunggu kunci enkripsi penerima aman...");
       return;
     }
 
-    const plainText = message; // Ambil teks asli untuk optimistic update lokal
+    const plainText = message;
     const tempId = `temp-${Date.now()}`;
-
-    // Enkripsi isi pesan menggunakan public key penerima sebelum dikirim ke database
     const encryptedText = await encryptMessage(plainText, activePublicKey);
 
     const newMsg = {
       id: tempId,
-      text: encryptedText, // Masuk ke state lokal berupa text terenkripsi
+      text: encryptedText,
       sender_id: canonicalPhone(myProfile.uniqueId),
       receiver_id: canonicalPhone(activeContactId),
       status: "sending",
       created_at: new Date().toISOString(),
     };
 
-    // Masukkan teks asli ke cache lokal agar pengirim bisa langsung membaca tanpa menunggu proses dekripsi ulang
     setDecryptedMessages((prev) => ({ ...prev, [tempId]: plainText }));
-
-    // Optimistic Update
     setMessages((prev) => [...prev, newMsg]);
     setMessage("");
 
@@ -492,7 +520,7 @@ const ChatView = () => {
       .from("messages")
       .insert([
         {
-          text: newMsg.text, // Teks yang masuk ke Supabase dipastikan 100% AMAN (Bentuk JSON String acak)
+          text: newMsg.text,
           sender_id: newMsg.sender_id,
           receiver_id: newMsg.receiver_id,
           status: "sent",
@@ -511,66 +539,58 @@ const ChatView = () => {
         100,
       );
     } else if (data && data[0]) {
-      // Petakan ID database asli ke cache teks asli
       setDecryptedMessages((prev) => ({ ...prev, [data[0].id]: plainText }));
       setMessages((prev) => prev.map((m) => (m.id === tempId ? data[0] : m)));
     }
   };
 
-  // === FUNGSI SIMPAN PROFIL KE SUPABASE (MANUAL TRIGGER) ===
+  // === SIMPAN PROFIL KE SUPABASE + IKAT DEVICE FINGERPRINT ===
   const handleSaveProfile = async () => {
     if (!myProfile.uniqueId) return;
     const myCanonId = canonicalPhone(myProfile.uniqueId);
+    const fingerprint = getDeviceFingerprint();
 
     try {
-      // 1. Simpan ke database lokal lewat utilitas db kamu
       db.saveProfile(myProfile);
 
-      // 2. Unggah data profil terbaru ke tabel 'profiles' di Supabase Cloud
       const { error } = await supabase.from("profiles").upsert({
         id: myCanonId,
         name: myProfile.name,
-        avatar: myProfile.avatar, // Mengirim Base64 data foto
+        avatar: myProfile.avatar,
+        device_fingerprint: fingerprint,
         updated_at: new Date().toISOString(),
       });
 
       if (error) throw error;
-
-      alert("Profil Anda berhasil diperbarui dan diunggah ke cloud!");
-      setShowProfileModal(false); // Tutup modal setelah sukses
+      alert("Profil dan Device Anda berhasil dikunci di cloud!");
+      setShowProfileModal(false);
     } catch (err) {
       console.error("Gagal mengunggah profil:", err);
       alert("Gagal menyimpan profil ke cloud. Silakan cek koneksi Anda.");
     }
   };
 
-  // === SINKRONISASI CLOUD SAAT TAMBAH KONTAK (VERSI FIX 100%) ===
   const handleAddContact = async (e) => {
     e.preventDefault();
     if (!newContact.trim()) return;
 
-    // 1. Standarkan format nomor inputan menjadi format internasional (+62...)
     const canon = canonicalPhone(newContact);
     const canonClean = cleanPhone(canon);
 
-    // 2. Cek apakah nomor sudah ada di daftar kontak lokal (Memakai pembanding angka bersih)
     if (contacts.find((c) => cleanPhone(c.id) === canonClean)) {
       return alert("Kontak sudah ada.");
     }
 
     try {
-      // 3. Ambil data nama dan foto asli si target dari tabel 'profiles' di Supabase Cloud
       const { data, error } = await supabase
         .from("profiles")
         .select("name, avatar")
         .eq("id", canon)
         .single();
 
-      // 4. Tentukan nama dan avatar fallback kalau di cloud nomor tersebut belum bikin profil
       const cloudName = data && !error ? data.name : formatPhoneInput(canon);
       const cloudAvatar = data && !error ? data.avatar : "?";
 
-      // 5. Masukkan kontak baru tersebut ke dalam daftar di aplikasi
       setContacts((prev) => [
         ...prev,
         {
@@ -582,7 +602,6 @@ const ChatView = () => {
       ]);
     } catch (err) {
       console.error("Gagal menarik profil kontak dari cloud:", err);
-      // Jika error/offline, tetap tambahkan dengan data default agar aplikasi tidak macet
       setContacts((prev) => [
         ...prev,
         {
@@ -611,6 +630,7 @@ const ChatView = () => {
     setEditingContactId(c.id);
     setEditName(c.name);
   };
+
   const saveContactName = () => {
     setContacts((prev) =>
       prev.map((c) =>
@@ -824,8 +844,6 @@ const ChatView = () => {
                   className={`message-wrapper ${msg.sender_id === myProfile.uniqueId ? "user" : "bot"}`}
                 >
                   <div className="message-bubble">
-                    {/* === E2EE LOGIC === */}
-                    {/* Tampilkan dari cache decryptedMessages, jika sedang didekripsi tampilkan loading kecil */}
                     <div className="message-content">
                       {decryptedMessages[msg.id] !== undefined
                         ? decryptedMessages[msg.id]
@@ -846,7 +864,11 @@ const ChatView = () => {
                           {msg.status === "error" && (
                             <span className="error-mark">!</span>
                           )}
-                          {msg.status === "sent" && <SingleCheckIcon />}
+                          {msg.status === "sent" && (
+                            <SendIcon
+                              style={{ width: "12px", height: "12px" }}
+                            />
+                          )}
                           {msg.status === "delivered" && <DoubleCheckIcon />}
                           {msg.status === "read" && (
                             <DoubleCheckIcon className="read" />
@@ -964,6 +986,7 @@ const ChatView = () => {
               />
               <p className="status-text">{myProfile.status}</p>
             </div>
+
             <div className="unique-id-box">
               <label>ID Unik (Berikan ke teman)</label>
               <div className="id-card">
@@ -983,7 +1006,7 @@ const ChatView = () => {
                 </button>
               </div>
             </div>
-            {/* === TOMBAL SIMPAN BARU === */}
+
             <div
               className="profile-action-buttons"
               style={{ display: "flex", gap: "10px", marginTop: "15px" }}
