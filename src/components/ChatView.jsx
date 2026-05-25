@@ -380,21 +380,6 @@ const ChatView = () => {
       detail:
         "Admin: Added secure User Management Panel with manual Fingerprint Creator for legacy users.",
     },
-    {
-      v: "1.6.9",
-      detail:
-        "Anti-Lost: Implemented silent device fingerprint tracking to prevent empty number overrides on refresh.",
-    },
-    {
-      v: "1.6.8",
-      detail:
-        "E2EE: Patched infinite-loop decryption crash and optimized real-time channel subscription order.",
-    },
-    {
-      v: "1.6.5",
-      detail:
-        "Security: Initial End-to-End Encryption (E2EE) Implementation using Web Crypto API.",
-    },
   ];
 
   const currentVersion = "1.7.2";
