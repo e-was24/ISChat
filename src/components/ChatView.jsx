@@ -35,6 +35,7 @@ const ChatView = () => {
   const [editingContactId, setEditingContactId] = useState(null);
   const [editName, setEditName] = useState("");
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminClickCount, setAdminClickCount] = useState(0);
 
   const [myProfile, setMyProfile] = useState({
     name: "",
@@ -68,14 +69,13 @@ const ChatView = () => {
     return "dev-" + Math.abs(hash);
   };
 
-  // === KOMPONEN PANEL KELOLA USER (ADMIN) ===
+  // === KOMPONEN PANEL KELOLA USER (ADMIN VERSI PRO) ===
   const UserManagementModal = ({ isOpen, onClose }) => {
     const [cloudProfiles, setCloudProfiles] = useState([]);
     const [searchFilter, setSearchFilter] = useState("");
     const [editingId, setEditingId] = useState(null);
     const [newPhoneInput, setNewPhoneInput] = useState("");
 
-    // Fetch semua user dari Supabase
     const fetchAllProfiles = async () => {
       const { data, error } = await supabase
         .from("profiles")
@@ -88,7 +88,31 @@ const ChatView = () => {
       if (isOpen) fetchAllProfiles();
     }, [isOpen]);
 
-    // Fungsi untuk update nomor HP tanpa mengubah sidik jari device
+    // Fungsi membuat/memperbarui fingerprint secara manual dari panel admin
+    const handleCreateFingerprintManual = async (userId) => {
+      // Generate id acak dummy admin untuk device tersebut jika tidak ada
+      const randomHex = Math.floor(Math.random() * 900000) + 100000;
+      const manualFingerprint = `dev-admin-${randomHex}`;
+
+      if (window.confirm(`Generate Sidik Jari baru untuk nomor ${userId}?`)) {
+        try {
+          await supabase
+            .from("profiles")
+            .update({
+              device_fingerprint: manualFingerprint,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", userId);
+
+          alert("Sidik Jari baru berhasil dibuat!");
+          fetchAllProfiles();
+        } catch (err) {
+          console.error(err);
+          alert("Gagal membuat Sidik Jari.");
+        }
+      }
+    };
+
     const handleUpdateUserPhone = async (oldId, fingerprint) => {
       if (!newPhoneInput.trim()) return alert("Nomor baru tidak boleh kosong!");
       const newCanonId = canonicalPhone(newPhoneInput);
@@ -99,7 +123,6 @@ const ChatView = () => {
         )
       ) {
         try {
-          // 1. Cek apakah nomor baru sudah dipakai oleh device lain
           const { data: existing } = await supabase
             .from("profiles")
             .select("id")
@@ -108,26 +131,24 @@ const ChatView = () => {
 
           if (existing && existing.id !== oldId) {
             return alert(
-              "Gagal: Nomor tersebut sudah terdaftar di device lain! Gunakan nomor lain untuk mencegah duplikat.",
+              "Gagal: Nomor tersebut sudah terdaftar di device lain!",
             );
           }
 
-          // 2. Jika nomor berubah, kita hapus dulu row id yang lama agar tidak duplikat di primary key
           if (oldId !== newCanonId) {
             await supabase.from("profiles").delete().eq("id", oldId);
           }
 
-          // 3. Masukkan data dengan ID nomor yang baru, tapi fingerprint TETAP SAMA
           await supabase.from("profiles").upsert({
             id: newCanonId,
             device_fingerprint: fingerprint,
             updated_at: new Date().toISOString(),
           });
 
-          alert("Nomor user berhasil dipulihkan dan dikunci ke device lama!");
+          alert("Nomor user berhasil diperbarui!");
           setEditingId(null);
           setNewPhoneInput("");
-          fetchAllProfiles(); // Refresh list
+          fetchAllProfiles();
         } catch (err) {
           console.error(err);
           alert("Gagal memperbarui nomor user.");
@@ -145,14 +166,10 @@ const ChatView = () => {
           style={{ maxWidth: "600px", width: "100%" }}
         >
           <h3>Panel Kelola User & Pemulihan Nomor</h3>
-          <p style={{ fontSize: "12px", color: "#aaa", marginBottom: "15px" }}>
-            Gunakan panel ini untuk memetakan ulang nomor HP yang hilang tanpa
-            merusak sidik jari perangkat (Anti-Duplikat).
-          </p>
 
           <input
             type="text"
-            placeholder="Cari sidik jari atau nomor..."
+            placeholder="Cari nomor atau Device ID..."
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             style={{
@@ -183,120 +200,148 @@ const ChatView = () => {
                   (p.device_fingerprint &&
                     p.device_fingerprint.includes(searchFilter)),
               )
-              .map((user) => (
-                <div
-                  key={user.id}
-                  style={{
-                    background: "#1a1a1a",
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "1px solid #333",
-                  }}
-                >
+              .map((user) => {
+                // Cek apakah fingerprint-nya kosong, bernilai "Tidak Ada", atau duplikat format nomor HP
+                const isFingerprintInvalid =
+                  !user.device_fingerprint ||
+                  user.device_fingerprint.startsWith("+") ||
+                  user.device_fingerprint === "Tidak Ada";
+
+                return (
                   <div
+                    key={user.id}
                     style={{
-                      display: "flex",
-                      justifyContent: "between",
-                      alignItems: "center",
-                      justifyContent: "space-between",
+                      background: "#1a1a1a",
+                      padding: "10px",
+                      borderRadius: "8px",
+                      border: "1px solid #333",
                     }}
                   >
-                    <div>
-                      <strong style={{ color: "#00adb5" }}>
-                        {user.id || "(Nomor Kosong)"}
-                      </strong>
-                      <div
-                        style={{
-                          fontSize: "11px",
-                          color: "#888",
-                          marginTop: "4px",
-                        }}
-                      >
-                        Device ID:{" "}
-                        <span style={{ color: "#ff8a00" }}>
-                          {user.device_fingerprint || "Tidak Ada"}
-                        </span>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div>
+                        <strong style={{ color: "#00adb5" }}>{user.id}</strong>
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "#888",
+                            marginTop: "4px",
+                          }}
+                        >
+                          Device ID:{" "}
+                          <span
+                            style={{
+                              color: isFingerprintInvalid
+                                ? "#ff3333"
+                                : "#ff8a00",
+                            }}
+                          >
+                            {isFingerprintInvalid
+                              ? "Tidak Ada / Cacat"
+                              : user.device_fingerprint}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "5px" }}>
+                        {/* FILTER TOMBOL: Jika fingerprint rusak/tidak ada, munculkan tombol Create */}
+                        {isFingerprintInvalid && (
+                          <button
+                            onClick={() =>
+                              handleCreateFingerprintManual(user.id)
+                            }
+                            style={{
+                              background: "#ff8a00",
+                              color: "#fff",
+                              border: "none",
+                              padding: "5px 10px",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                            }}
+                          >
+                            Create Fingerprint
+                          </button>
+                        )}
+
+                        {editingId === user.id ? (
+                          <div style={{ display: "flex", gap: "3px" }}>
+                            <input
+                              type="text"
+                              value={newPhoneInput}
+                              onChange={(e) => setNewPhoneInput(e.target.value)}
+                              style={{
+                                padding: "4px",
+                                background: "#333",
+                                color: "#fff",
+                                border: "1px solid #555",
+                                borderRadius: "4px",
+                                fontSize: "12px",
+                                width: "110px",
+                              }}
+                            />
+                            <button
+                              onClick={() =>
+                                handleUpdateUserPhone(
+                                  user.id,
+                                  user.device_fingerprint,
+                                )
+                              }
+                              style={{
+                                background: "#28a745",
+                                color: "#fff",
+                                border: "none",
+                                padding: "4px 6px",
+                                borderRadius: "4px",
+                                fontSize: "12px",
+                              }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              style={{
+                                background: "#dc3545",
+                                color: "#fff",
+                                border: "none",
+                                padding: "4px 6px",
+                                borderRadius: "4px",
+                                fontSize: "12px",
+                              }}
+                            >
+                              X
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingId(user.id);
+                              setNewPhoneInput(user.id);
+                            }}
+                            style={{
+                              background: "#444",
+                              color: "#fff",
+                              border: "none",
+                              padding: "5px 10px",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                            }}
+                            disabled={isFingerprintInvalid} // Disable jika fingerprint belum di-create demi keamanan data
+                          >
+                            Pulihkan Nomor
+                          </button>
+                        )}
                       </div>
                     </div>
-
-                    {editingId === user.id ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "5px",
-                          marginTop: "5px",
-                        }}
-                      >
-                        <input
-                          type="text"
-                          placeholder="Nomor baru..."
-                          value={newPhoneInput}
-                          onChange={(e) => setNewPhoneInput(e.target.value)}
-                          style={{
-                            padding: "4px",
-                            background: "#333",
-                            color: "#fff",
-                            border: "1px solid #555",
-                            borderRadius: "4px",
-                            fontSize: "12px",
-                          }}
-                        />
-                        <button
-                          onClick={() =>
-                            handleUpdateUserPhone(
-                              user.id,
-                              user.device_fingerprint,
-                            )
-                          }
-                          style={{
-                            background: "#28a745",
-                            color: "#fff",
-                            border: "none",
-                            padding: "4px 8px",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            fontSize: "12px",
-                          }}
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditingId(null)}
-                          style={{
-                            background: "#dc3545",
-                            color: "#fff",
-                            border: "none",
-                            padding: "4px 8px",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            fontSize: "12px",
-                          }}
-                        >
-                          Batal
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setEditingId(user.id);
-                          setNewPhoneInput(user.id);
-                        }}
-                        style={{
-                          background: "#444",
-                          color: "#fff",
-                          border: "none",
-                          padding: "5px 10px",
-                          borderRadius: "4px",
-                          cursor: "pointer",
-                          fontSize: "12px",
-                        }}
-                      >
-                        Pulihkan Nomor
-                      </button>
-                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
           </div>
 
           <button
@@ -936,10 +981,30 @@ const ChatView = () => {
         className={`chat-sidebar ${mobileView === "contacts" ? "mobile-active" : ""}`}
       >
         <div className="sidebar-header">
-          <LogoIcon className="sidebar-logo" />{" "}
+          <LogoIcon className="sidebar-logo" />
           <h2
-            onClick={() => setShowAdminModal(true)}
-            style={{ cursor: "pointer" }}
+            style={{ cursor: "default", userSelect: "none" }}
+            onClick={() => {
+              const nextCount = adminClickCount + 1;
+              if (nextCount >= 7) {
+                setAdminClickCount(0);
+
+                const inputPassword = window.prompt(
+                  "Masukkan Password Secure Admin:",
+                );
+
+                const securePassword = import.meta.env.VITE_ADMIN_PASSWORD;
+
+                if (inputPassword === securePassword) {
+                  setShowAdminModal(true);
+                } else if (inputPassword !== null) {
+                  alert("Password Salah! Akses Ditolak.");
+                }
+              } else {
+                setAdminClickCount(nextCount);
+                console.log(`Ketukan rahasia admin: ${nextCount}/7`);
+              }
+            }}
           >
             ISChat
           </h2>
