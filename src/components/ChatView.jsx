@@ -947,14 +947,42 @@ const ChatView = () => {
     setNewContact("");
   };
 
+  // === FUNGSI PILIH FOTO PROFIL (VERSI ANTI-BLANK & AUTO-RESET) ===
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () =>
-        setMyProfile((prev) => ({ ...prev, avatar: reader.result }));
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    // Batasi ukuran file maksimal 2MB biar database Supabase dan memori HP gak jebol
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Ukuran foto terlalu besar! Maksimal 2MB, bro.");
+      e.target.value = ""; // Reset inputan file
+      return;
     }
+
+    const reader = new FileReader();
+
+    // Jaring pengaman jika proses pembacaan file error di browser
+    reader.onerror = () => {
+      console.error("Gagal membaca file foto.");
+      alert("Gagal memuat foto, silakan coba foto lain.");
+      e.target.value = "";
+    };
+
+    reader.onloadend = () => {
+      if (reader.result) {
+        // Amankan state: Ganti profil foto secara bersih
+        setMyProfile((prev) => ({
+          ...prev,
+          avatar: reader.result, // Mengganti Base64 lama dengan yang baru
+        }));
+      }
+
+      // PENTING: Reset nilai input file menjadi kosong kembali
+      // Biar kalau user mau ganti foto lagi, browser gak menganggapnya 'stuck/blank'
+      e.target.value = "";
+    };
+
+    reader.readAsDataURL(file);
   };
 
   const startEditing = (c) => {
@@ -1305,10 +1333,19 @@ const ChatView = () => {
           >
             <div className="profile-photo-wrap">
               <div className="avatar-large">
-                {myProfile.avatar ? (
-                  <img src={myProfile.avatar} className="avatar-img" />
+                {myProfile.avatar &&
+                myProfile.avatar.startsWith("data:image") ? (
+                  <img
+                    src={myProfile.avatar}
+                    className="avatar-img"
+                    alt="Profile"
+                    onError={(e) => {
+                      e.target.style.display = "none";
+                      setMyProfile((prev) => ({ ...prev, avatar: "" }));
+                    }}
+                  />
                 ) : myProfile.name ? (
-                  myProfile.name.charAt(0)
+                  myProfile.name.charAt(0).toUpperCase()
                 ) : (
                   "P"
                 )}
