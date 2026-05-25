@@ -126,9 +126,10 @@ const ChatView = () => {
   }, []);
 
   // ====================================================================
-  // LOAD INITIAL & CLOUD PROFILE RESTORE (ANTI-LOST)
+  // LOAD INITIAL & CLOUD PROFILE RESTORE (VERSION 100% ANTI-LOST & ANTI-EMPTY)
   // ====================================================================
   useEffect(() => {
+    // 1. Ambil data cadangan yang ada di memori lokal HP terlebih dahulu
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
     const savedIds = db.getDeletedMessages();
@@ -142,75 +143,99 @@ const ChatView = () => {
       id: canonicalPhone(c.id),
     }));
 
+    // 2. Masukkan data lokal ke State React agar UI tidak nge-blank / kosong
     setContacts(canonContacts);
     setDeletedIds(savedIds);
     setMessages(db.getMessages());
     if (canonContacts.length > 0) setActiveContactId(canonContacts[0].id);
 
-    // 3. Jalankan fungsi proteksi sidik jari device ke cloud Supabase (Auto Migrasi User Lama)
+    // 3. Fungsi sinkronisasi dan penguncian Sidik Jari Device ke cloud Supabase
     const lockDeviceToProfile = async () => {
       const fingerprint = getDeviceFingerprint();
 
-      // KONDISI A: Jika data lokal kosong melongpong (Habis di-refresh kosong / Clear Cache)
+      // KONDISI A: Jika di LocalStorage BENAR-BENAR kosong (bukan karena refresh bug, tapi beneran user baru)
       if (!canonProfile.uniqueId || canonProfile.uniqueId.trim() === "") {
         console.log(
-          "LocalStorage kosong/belum siap. Mencari nomor berdasarkan Device Fingerprint...",
+          "LocalStorage kosong. Mencari nomor berdasarkan Device Fingerprint...",
         );
 
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, name, avatar")
-          .eq("device_fingerprint", fingerprint)
-          .maybeSingle();
+        try {
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("id, name, avatar")
+            .eq("device_fingerprint", fingerprint)
+            .maybeSingle(); // maybeSingle tidak melempar fatal error jika data kosong
 
-        if (data && !error) {
-          const restoredProfile = {
-            uniqueId: data.id,
-            name: data.name || "User " + data.id.slice(-4),
-            avatar: data.avatar || "?",
-          };
-          setMyProfile(restoredProfile);
-          db.saveProfile(restoredProfile);
-          console.log(
-            "Sukses memulihkan nomor lama untuk device ini:",
-            data.id,
+          // HANYA pasang profile jika data dari cloud beneran ditemukan dan tidak error
+          if (data && data.id && !error) {
+            const restoredProfile = {
+              uniqueId: data.id,
+              name: data.name || "User " + data.id.slice(-4),
+              avatar: data.avatar || "?",
+            };
+            setMyProfile(restoredProfile);
+            db.saveProfile(restoredProfile);
+            console.log(
+              "Sukses memulihkan nomor lama untuk device ini:",
+              data.id,
+            );
+            return;
+          } else {
+            console.log(
+              "Device fingerprint belum terikat dengan nomor manapun di cloud.",
+            );
+          }
+        } catch (fetchErr) {
+          console.error(
+            "Gagal melakukan restore profile dari cloud:",
+            fetchErr,
           );
-          return;
         }
       }
 
-      // KONDISI B & C: Jika di lokal ada nomor HP-nya
+      // KONDISI B & C: Jika di LocalStorage SUDAH ADA nomornya (JANGAN PERNAH DI-OVERRIDE JADI KOSONG!)
       if (canonProfile.uniqueId && canonProfile.uniqueId.trim() !== "") {
+        // Kunci Utama: Selalu utamakan nomor lokal yang sudah ada biar gak hilang layarnya
         setMyProfile(canonProfile);
 
-        // 1. Cek dulu ke cloud apakah nomor ini sudah punya device_fingerprint atau belum
-        const { data: cloudData } = await supabase
-          .from("profiles")
-          .select("device_fingerprint")
-          .eq("id", canonProfile.uniqueId)
-          .maybeSingle();
+        try {
+          // 1. Cek status fingerprint nomor ini di database cloud Supabase
+          const { data: cloudData, error: readError } = await supabase
+            .from("profiles")
+            .select("device_fingerprint")
+            .eq("id", canonProfile.uniqueId)
+            .maybeSingle();
 
-        // 2. Jika di cloud belum ada sidik jarinya (Kondisi User Lama), langsung UPDATE otomatis di background!
-        if (!cloudData || !cloudData.device_fingerprint) {
-          console.log(
-            "User lama terdeteksi belum punya fingerprint. Menjalankan silent auto-update...",
-          );
-          await supabase.from("profiles").upsert({
-            id: canonProfile.uniqueId,
-            name: canonProfile.name,
-            avatar: canonProfile.avatar,
-            device_fingerprint: fingerprint, // Langsung dikunci ke device ini
-            updated_at: new Date().toISOString(),
-          });
-          console.log(
-            "Fingerprint berhasil dipasang serentak untuk user lama.",
+          if (readError) throw readError;
+
+          // 2. Jika di cloud belum ada sidik jarinya (Kondisi User Lama), lakukan silent auto-update serentak
+          if (!cloudData || !cloudData.device_fingerprint) {
+            console.log(
+              "User lama terdeteksi belum punya fingerprint. Menjalankan silent auto-update...",
+            );
+            await supabase.from("profiles").upsert({
+              id: canonProfile.uniqueId,
+              name: canonProfile.name,
+              avatar: canonProfile.avatar,
+              device_fingerprint: fingerprint, // Kunci device di sini
+              updated_at: new Date().toISOString(),
+            });
+            console.log(
+              "Fingerprint berhasil dipasang serentak di background.",
+            );
+          }
+        } catch (cloudErr) {
+          // Jika internet putus, biarkan saja data lokal tetap aman dan utuh
+          console.error(
+            "Gagal sinkronisasi fingerprint ke cloud (Offline/Error), mengamankan data lokal:",
+            cloudErr,
           );
         }
       }
     };
 
     lockDeviceToProfile();
-  }, []);
+  }, []); // Hanya berjalan 1 kali pas aplikasi pertama kali di-load / refresh
 
   useEffect(() => {
     if (contacts.length > 0) db.saveContacts(contacts);
