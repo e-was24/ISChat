@@ -617,43 +617,51 @@ const ChatView = () => {
   }, [activeContactId]);
 
   // ====================================================================
-  // 3. BLOK DEKRIPSI SEMUA PESAN (VERSI FIX HYBRID DATA PARSING ANTI-STUCK)
+  // 3. BLOK DEKRIPSI SEMUA PESAN (VERSI PINTAR: AMAN UNTUK POV PENGIRIM)
   // ====================================================================
   useEffect(() => {
     const decryptAll = async () => {
-      if (!myPrivateKey || messages.length === 0) return;
+      if (!myPrivateKey || messages.length === 0 || !myProfile.uniqueId) return;
 
+      const myId = canonicalPhone(myProfile.uniqueId);
       const newDecrypted = { ...decryptedMessages };
       let updated = false;
 
       for (const msg of messages) {
-        // Hanya proses jika belum pernah didekripsi sebelumnya
+        // Hanya proses jika belum pernah didekripsi di sesi ini
         if (newDecrypted[msg.id] === undefined) {
+          const isSenderMe = canonicalPhone(msg.sender_id) === myId;
+
           if (
             msg.text &&
             (msg.text.startsWith('{"encryptedText"') ||
               msg.text.startsWith('{"encryptedKey"'))
           ) {
-            try {
-              // Jalankan dekripsi memakai fungsi crypto utama kamu
-              const decryptedText = await decryptMessage(
-                msg.text,
-                myPrivateKey,
-              );
-
-              if (decryptedText) {
-                newDecrypted[msg.id] = decryptedText;
-              } else {
-                newDecrypted[msg.id] = "⚠️ Gagal membaca muatan pesan aman.";
-              }
-            } catch (err) {
-              console.error(`Gagal mendekripsi pesan ID ${msg.id}:`, err);
-              // Fallback aman: Beri tanda agar loop tidak mencoba mendekripsi pesan corrupt ini terus-menerus
+            // JIKA SAYA ADALAH PENGIRIM: Kunci privat saya gak bakalan cocok (karena dikunci pakai public key lawan)
+            if (isSenderMe) {
+              // Jika teks aslinya tidak sengaja hilang dari cache state, tampilkan fallback teks terenkripsi yang aman
               newDecrypted[msg.id] =
-                "🔒 Pesan terenkripsi (Kunci tidak cocok/Lama)";
+                msg.plain_text || "🔒 Pesan Terenkripsi (Terkirim)";
+            } else {
+              // JIKA SAYA ADALAH PENERIMA: Gunakan kunci privat saya untuk membuka pesan dari orang lain
+              try {
+                const decryptedText = await decryptMessage(
+                  msg.text,
+                  myPrivateKey,
+                );
+                newDecrypted[msg.id] =
+                  decryptedText || "⚠️ Gagal membaca muatan pesan aman.";
+              } catch (err) {
+                console.error(
+                  `Gagal mendekripsi pesan masuk ID ${msg.id}:`,
+                  err,
+                );
+                newDecrypted[msg.id] =
+                  "🔒 Gagal mendekripsi pesan (Kunci lama/tidak cocok)";
+              }
             }
           } else {
-            // Jika pesan teks biasa (plain text), langsung tampilkan apa adanya
+            // Jika pesan bukan berformat JSON enkripsi (plain text), tampilkan langsung
             newDecrypted[msg.id] = msg.text;
           }
           updated = true;
@@ -666,7 +674,7 @@ const ChatView = () => {
     };
 
     decryptAll();
-  }, [messages, myPrivateKey]);
+  }, [messages, myPrivateKey, myProfile.uniqueId]);
 
   // ====================================================================
   // 4. REALTIME LOGIC (PRESENCE & MESSAGES LOGIC)
@@ -865,6 +873,7 @@ const ChatView = () => {
     const newMsg = {
       id: tempId,
       text: encryptedText,
+      plain_text: plainText,
       sender_id: canonicalPhone(myProfile.uniqueId),
       receiver_id: canonicalPhone(activeContactId),
       status: "sending",
