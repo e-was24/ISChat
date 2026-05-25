@@ -105,7 +105,7 @@ const ChatView = () => {
     }
   }, []);
 
-  // Load initial
+  // Load initial (Ambil dari lokal dulu, lalu sync data profil dari Cloud)
   useEffect(() => {
     const profile = db.getProfile();
     const savedContacts = db.getContacts();
@@ -125,17 +125,69 @@ const ChatView = () => {
     setDeletedIds(savedIds);
     setMessages(db.getMessages());
     if (canonContacts.length > 0) setActiveContactId(canonContacts[0].id);
+
+    // === TAMBAHAN LOGIKA SINKRONISASI CLOUD ===
+    // Ambil data profil terbaru dari Supabase jika uniqueId sudah ada
+    const fetchLatestCloudProfile = async () => {
+      if (!canonProfile.uniqueId) return;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("name, avatar")
+        .eq("id", canonProfile.uniqueId)
+        .single();
+
+      if (data && !error) {
+        // Jika di cloud ada data profil terbaru, update state dan lokal memori kamu
+        setMyProfile((prev) => {
+          const updatedProfile = {
+            ...prev,
+            name: data.name || prev.name,
+            avatar: data.avatar || prev.avatar,
+          };
+          db.saveProfile(updatedProfile); // Simpan ke local storage juga biar permanen
+          return updatedProfile;
+        });
+        console.log("Profil berhasil disinkronkan dari Cloud Supabase!");
+      }
+    };
+
+    fetchLatestCloudProfile();
   }, []);
 
   useEffect(() => {
     if (contacts.length > 0) db.saveContacts(contacts);
   }, [contacts]);
+
   useEffect(() => {
     db.saveDeletedMessages(deletedIds);
   }, [deletedIds]);
+
+  // === INI YANG SUDAH DIGANTI (Langkah 1) ===
+  // Sync profil kamu ke Local DB dan Cloud Supabase secara permanen
   useEffect(() => {
     db.saveProfile(myProfile);
+
+    const syncProfileToCloud = async () => {
+      if (!myProfile.uniqueId) return;
+      const myCanonId = canonicalPhone(myProfile.uniqueId);
+
+      await supabase.from("profiles").upsert({
+        id: myCanonId,
+        name: myProfile.name,
+        avatar: myProfile.avatar,
+        updated_at: new Date().toISOString(),
+      });
+    };
+
+    // Debounce 1 detik biar database gak jebol pas kamu lagi ngetik nama
+    const delayDebounce = setTimeout(() => {
+      syncProfileToCloud();
+    }, 1000);
+
+    return () => clearTimeout(delayDebounce);
   }, [myProfile]);
+
   useEffect(() => {
     db.saveMessages(messages);
   }, [messages]);
@@ -472,21 +524,53 @@ const ChatView = () => {
     }
   };
 
-  const handleAddContact = (e) => {
+  // === SINKRONISASI CLOUD SAAT TAMBAH KONTAK ===
+  const handleAddContact = async (e) => {
     e.preventDefault();
     if (!newContact.trim()) return;
     const canon = canonicalPhone(newContact);
-    if (contacts.find((c) => cleanPhone(c.id) === cleanPhone(canon)))
-      return alert("Ada.");
-    setContacts((prev) => [
-      ...prev,
-      {
-        id: canon,
-        name: formatPhoneInput(canon),
-        status: "Baru ditambahkan",
-        avatar: "?",
-      },
-    ]);
+
+    // Cek apakah nomor sudah ada di daftar kontak lokal kamu
+    if (contacts.find((c) => cleanPhone(c.id) === cleanPhone(canon))) {
+      return alert("Kontak sudah ada.");
+    }
+
+    try {
+      // 1. Ambil data nama dan foto asli si target dari tabel 'profiles' di Supabase Cloud
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("name, avatar")
+        .eq("id", canon)
+        .single();
+
+      // 2. Tentukan nama dan avatar fallback kalau di cloud nomor tersebut belum bikin profil
+      const cloudName = data && !error ? data.name : formatPhoneInput(canon);
+      const cloudAvatar = data && !error ? data.avatar : "?";
+
+      // 3. Masukkan kontak baru tersebut ke dalam daftar di aplikasi
+      setContacts((prev) => [
+        ...prev,
+        {
+          id: canon,
+          name: cloudName,
+          status: "Baru ditambahkan",
+          avatar: cloudAvatar,
+        },
+      ]);
+    } catch (err) {
+      console.error("Gagal menarik profil kontak dari cloud:", err);
+      // Jika error/offline, tetap tambahkan dengan data default agar tidak lag
+      setContacts((prev) => [
+        ...prev,
+        {
+          id: canon,
+          name: formatPhoneInput(canon),
+          status: "Baru ditambahkan",
+          avatar: "?",
+        },
+      ]);
+    }
+
     setNewContact("");
   };
 
