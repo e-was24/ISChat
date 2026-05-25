@@ -34,6 +34,7 @@ const ChatView = () => {
   const [newContact, setNewContact] = useState("");
   const [editingContactId, setEditingContactId] = useState(null);
   const [editName, setEditName] = useState("");
+  const [showAdminModal, setShowAdminModal] = useState(false);
 
   const [myProfile, setMyProfile] = useState({
     name: "",
@@ -65,6 +66,249 @@ const ChatView = () => {
       hash |= 0;
     }
     return "dev-" + Math.abs(hash);
+  };
+
+  // === KOMPONEN PANEL KELOLA USER (ADMIN) ===
+  const UserManagementModal = ({ isOpen, onClose }) => {
+    const [cloudProfiles, setCloudProfiles] = useState([]);
+    const [searchFilter, setSearchFilter] = useState("");
+    const [editingId, setEditingId] = useState(null);
+    const [newPhoneInput, setNewPhoneInput] = useState("");
+
+    // Fetch semua user dari Supabase
+    const fetchAllProfiles = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, name, device_fingerprint, updated_at")
+        .order("updated_at", { ascending: false });
+      if (data && !error) setCloudProfiles(data);
+    };
+
+    useEffect(() => {
+      if (isOpen) fetchAllProfiles();
+    }, [isOpen]);
+
+    // Fungsi untuk update nomor HP tanpa mengubah sidik jari device
+    const handleUpdateUserPhone = async (oldId, fingerprint) => {
+      if (!newPhoneInput.trim()) return alert("Nomor baru tidak boleh kosong!");
+      const newCanonId = canonicalPhone(newPhoneInput);
+
+      if (
+        window.confirm(
+          `Yakin ingin mengubah nomor user ini menjadi ${newCanonId}?`,
+        )
+      ) {
+        try {
+          // 1. Cek apakah nomor baru sudah dipakai oleh device lain
+          const { data: existing } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("id", newCanonId)
+            .maybeSingle();
+
+          if (existing && existing.id !== oldId) {
+            return alert(
+              "Gagal: Nomor tersebut sudah terdaftar di device lain! Gunakan nomor lain untuk mencegah duplikat.",
+            );
+          }
+
+          // 2. Jika nomor berubah, kita hapus dulu row id yang lama agar tidak duplikat di primary key
+          if (oldId !== newCanonId) {
+            await supabase.from("profiles").delete().eq("id", oldId);
+          }
+
+          // 3. Masukkan data dengan ID nomor yang baru, tapi fingerprint TETAP SAMA
+          await supabase.from("profiles").upsert({
+            id: newCanonId,
+            device_fingerprint: fingerprint,
+            updated_at: new Date().toISOString(),
+          });
+
+          alert("Nomor user berhasil dipulihkan dan dikunci ke device lama!");
+          setEditingId(null);
+          setNewPhoneInput("");
+          fetchAllProfiles(); // Refresh list
+        } catch (err) {
+          console.error(err);
+          alert("Gagal memperbarui nomor user.");
+        }
+      }
+    };
+
+    if (!isOpen) return null;
+
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div
+          className="modal-content glass-card"
+          onClick={(e) => e.stopPropagation()}
+          style={{ maxWidth: "600px", width: "100%" }}
+        >
+          <h3>Panel Kelola User & Pemulihan Nomor</h3>
+          <p style={{ fontSize: "12px", color: "#aaa", marginBottom: "15px" }}>
+            Gunakan panel ini untuk memetakan ulang nomor HP yang hilang tanpa
+            merusak sidik jari perangkat (Anti-Duplikat).
+          </p>
+
+          <input
+            type="text"
+            placeholder="Cari sidik jari atau nomor..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px",
+              borderRadius: "6px",
+              background: "#222",
+              color: "#fff",
+              border: "1px solid #444",
+              marginBottom: "15px",
+            }}
+          />
+
+          <div
+            className="admin-user-list"
+            style={{
+              maxHeight: "300px",
+              overflowY: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+            }}
+          >
+            {cloudProfiles
+              .filter(
+                (p) =>
+                  p.id.includes(searchFilter) ||
+                  (p.device_fingerprint &&
+                    p.device_fingerprint.includes(searchFilter)),
+              )
+              .map((user) => (
+                <div
+                  key={user.id}
+                  style={{
+                    background: "#1a1a1a",
+                    padding: "10px",
+                    borderRadius: "8px",
+                    border: "1px solid #333",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "between",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <div>
+                      <strong style={{ color: "#00adb5" }}>
+                        {user.id || "(Nomor Kosong)"}
+                      </strong>
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "#888",
+                          marginTop: "4px",
+                        }}
+                      >
+                        Device ID:{" "}
+                        <span style={{ color: "#ff8a00" }}>
+                          {user.device_fingerprint || "Tidak Ada"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {editingId === user.id ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "5px",
+                          marginTop: "5px",
+                        }}
+                      >
+                        <input
+                          type="text"
+                          placeholder="Nomor baru..."
+                          value={newPhoneInput}
+                          onChange={(e) => setNewPhoneInput(e.target.value)}
+                          style={{
+                            padding: "4px",
+                            background: "#333",
+                            color: "#fff",
+                            border: "1px solid #555",
+                            borderRadius: "4px",
+                            fontSize: "12px",
+                          }}
+                        />
+                        <button
+                          onClick={() =>
+                            handleUpdateUserPhone(
+                              user.id,
+                              user.device_fingerprint,
+                            )
+                          }
+                          style={{
+                            background: "#28a745",
+                            color: "#fff",
+                            border: "none",
+                            padding: "4px 8px",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          style={{
+                            background: "#dc3545",
+                            color: "#fff",
+                            border: "none",
+                            padding: "4px 8px",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                          }}
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setEditingId(user.id);
+                          setNewPhoneInput(user.id);
+                        }}
+                        style={{
+                          background: "#444",
+                          color: "#fff",
+                          border: "none",
+                          padding: "5px 10px",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                        }}
+                      >
+                        Pulihkan Nomor
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+          </div>
+
+          <button
+            className="btn btn-secondary"
+            onClick={onClose}
+            style={{ marginTop: "15px", width: "100%", background: "#333" }}
+          >
+            Tutup Panel
+          </button>
+        </div>
+      </div>
+    );
   };
 
   // === E2EE LOGIC STATES ===
@@ -692,7 +936,13 @@ const ChatView = () => {
         className={`chat-sidebar ${mobileView === "contacts" ? "mobile-active" : ""}`}
       >
         <div className="sidebar-header">
-          <LogoIcon className="sidebar-logo" /> <h2>ISChat</h2>
+          <LogoIcon className="sidebar-logo" />{" "}
+          <h2
+            onClick={() => setShowAdminModal(true)}
+            style={{ cursor: "pointer" }}
+          >
+            ISChat
+          </h2>
           <button
             className="profile-trigger"
             onClick={() => setShowProfileModal(true)}
@@ -1107,6 +1357,11 @@ const ChatView = () => {
           </div>
         </div>
       )}
+      {/* Panggil Modal Admin Kelola User */}
+      <UserManagementModal
+        isOpen={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+      />
     </div>
   );
 };
