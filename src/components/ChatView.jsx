@@ -163,29 +163,9 @@ const ChatView = () => {
     db.saveDeletedMessages(deletedIds);
   }, [deletedIds]);
 
-  // === INI YANG SUDAH DIGANTI (Langkah 1) ===
   // Sync profil kamu ke Local DB dan Cloud Supabase secara permanen
   useEffect(() => {
     db.saveProfile(myProfile);
-
-    const syncProfileToCloud = async () => {
-      if (!myProfile.uniqueId) return;
-      const myCanonId = canonicalPhone(myProfile.uniqueId);
-
-      await supabase.from("profiles").upsert({
-        id: myCanonId,
-        name: myProfile.name,
-        avatar: myProfile.avatar,
-        updated_at: new Date().toISOString(),
-      });
-    };
-
-    // Debounce 1 detik biar database gak jebol pas kamu lagi ngetik nama
-    const delayDebounce = setTimeout(() => {
-      syncProfileToCloud();
-    }, 1000);
-
-    return () => clearTimeout(delayDebounce);
   }, [myProfile]);
 
   useEffect(() => {
@@ -524,30 +504,60 @@ const ChatView = () => {
     }
   };
 
-  // === SINKRONISASI CLOUD SAAT TAMBAH KONTAK ===
+  // === FUNGSI SIMPAN PROFIL KE SUPABASE (MANUAL TRIGGER) ===
+  const handleSaveProfile = async () => {
+    if (!myProfile.uniqueId) return;
+    const myCanonId = canonicalPhone(myProfile.uniqueId);
+
+    try {
+      // 1. Simpan ke database lokal lewat utilitas db kamu
+      db.saveProfile(myProfile);
+
+      // 2. Unggah data profil terbaru ke tabel 'profiles' di Supabase Cloud
+      const { error } = await supabase.from("profiles").upsert({
+        id: myCanonId,
+        name: myProfile.name,
+        avatar: myProfile.avatar, // Mengirim Base64 data foto
+        updated_at: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+
+      alert("Profil Anda berhasil diperbarui dan diunggah ke cloud!");
+      setShowProfileModal(false); // Tutup modal setelah sukses
+    } catch (err) {
+      console.error("Gagal mengunggah profil:", err);
+      alert("Gagal menyimpan profil ke cloud. Silakan cek koneksi Anda.");
+    }
+  };
+
+  // === SINKRONISASI CLOUD SAAT TAMBAH KONTAK (VERSI FIX 100%) ===
   const handleAddContact = async (e) => {
     e.preventDefault();
     if (!newContact.trim()) return;
-    const canon = canonicalPhone(newContact);
 
-    // Cek apakah nomor sudah ada di daftar kontak lokal kamu
-    if (contacts.find((c) => cleanPhone(c.id) === cleanPhone(canon))) {
+    // 1. Standarkan format nomor inputan menjadi format internasional (+62...)
+    const canon = canonicalPhone(newContact);
+    const canonClean = cleanPhone(canon);
+
+    // 2. Cek apakah nomor sudah ada di daftar kontak lokal (Memakai pembanding angka bersih)
+    if (contacts.find((c) => cleanPhone(c.id) === canonClean)) {
       return alert("Kontak sudah ada.");
     }
 
     try {
-      // 1. Ambil data nama dan foto asli si target dari tabel 'profiles' di Supabase Cloud
+      // 3. Ambil data nama dan foto asli si target dari tabel 'profiles' di Supabase Cloud
       const { data, error } = await supabase
         .from("profiles")
         .select("name, avatar")
         .eq("id", canon)
         .single();
 
-      // 2. Tentukan nama dan avatar fallback kalau di cloud nomor tersebut belum bikin profil
+      // 4. Tentukan nama dan avatar fallback kalau di cloud nomor tersebut belum bikin profil
       const cloudName = data && !error ? data.name : formatPhoneInput(canon);
       const cloudAvatar = data && !error ? data.avatar : "?";
 
-      // 3. Masukkan kontak baru tersebut ke dalam daftar di aplikasi
+      // 5. Masukkan kontak baru tersebut ke dalam daftar di aplikasi
       setContacts((prev) => [
         ...prev,
         {
@@ -559,7 +569,7 @@ const ChatView = () => {
       ]);
     } catch (err) {
       console.error("Gagal menarik profil kontak dari cloud:", err);
-      // Jika error/offline, tetap tambahkan dengan data default agar tidak lag
+      // Jika error/offline, tetap tambahkan dengan data default agar aplikasi tidak macet
       setContacts((prev) => [
         ...prev,
         {
@@ -960,12 +970,34 @@ const ChatView = () => {
                 </button>
               </div>
             </div>
-            <button
-              className="btn btn-primary"
-              onClick={() => setShowProfileModal(false)}
+            {/* === TOMBAL SIMPAN BARU === */}
+            <div
+              className="profile-action-buttons"
+              style={{ display: "flex", gap: "10px", marginTop: "15px" }}
             >
-              Selesai
-            </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleSaveProfile}
+                style={{ width: "100%" }}
+              >
+                Simpan Profil
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowProfileModal(false)}
+                style={{
+                  width: "100%",
+                  background: "#444",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "8px",
+                }}
+              >
+                Batal
+              </button>
+            </div>
           </div>
         </div>
       )}
