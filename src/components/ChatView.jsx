@@ -585,6 +585,7 @@ const ChatView = () => {
         await supabase.from("user_keys").upsert({
           phone_id: myCanonId,
           public_key: pubKey, // Selalu unggah public key yang COCOK dengan private key di atas
+          username: myProfile.name || "User " + myCanonId.slice(-4),
           updated_at: new Date().toISOString(),
         });
       }
