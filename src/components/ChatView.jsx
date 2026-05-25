@@ -141,37 +141,61 @@ const ChatView = () => {
   }, [messages]);
 
   // === E2EE LOGIC ===
-  // Inisialisasi Key Pair untuk User Sendiri
+  // Inisialisasi Key Pair untuk User Sendiri (User Baru & User Lama)
   useEffect(() => {
     const initE2EE = async () => {
+      // 1. Pastikan uniqueId user sudah ke-load dari local DB
       if (!myProfile.uniqueId) return;
       const myCanonId = canonicalPhone(myProfile.uniqueId);
 
+      // 2. Cek apakah user lama ini sudah punya kunci di browsernya atau belum
       let privKey = localStorage.getItem("ischat_private_key");
       let pubKey = localStorage.getItem("ischat_public_key");
 
-      // Jika belum punya kunci di local storage, bikin baru
+      // 3. JIKA BELUM ADA (Kasus User Lama setelah Update), OTOMATIS GENERATE DI SINI
       if (!privKey || !pubKey) {
-        console.log("Generating key pair baru untuk E2EE...");
-        const keys = await generateKeyPair();
-        privKey = keys.privateKey;
-        pubKey = keys.publicKey;
-        localStorage.setItem("ischat_private_key", privKey);
-        localStorage.setItem("ischat_public_key", pubKey);
+        console.log(
+          "User lama terdeteksi belum punya E2EE. Men-generate key pair baru...",
+        );
+        try {
+          const keys = await generateKeyPair();
+          privKey = keys.privateKey;
+          pubKey = keys.publicKey;
+
+          // Simpan di browser user agar tidak hilang saat reload
+          localStorage.setItem("ischat_private_key", privKey);
+          localStorage.setItem("ischat_public_key", pubKey);
+          console.log("Key pair baru berhasil disimpan di LocalStorage.");
+        } catch (cryptoError) {
+          console.error(
+            "Gagal generate key pair secara otomatis:",
+            cryptoError,
+          );
+          return;
+        }
       }
 
       setMyPrivateKey(privKey);
 
-      // Sinkronisasi Public Key ke Supabase `user_keys`
-      await supabase.from("user_keys").upsert({
+      // 4. Selalu pastikan Public Key ter-upload / ter-update di Supabase user_keys
+      const { error } = await supabase.from("user_keys").upsert({
         phone_id: myCanonId,
         public_key: pubKey,
         updated_at: new Date().toISOString(),
       });
+
+      if (error) {
+        console.error("Gagal sinkronisasi public key ke Supabase:", error);
+      } else {
+        console.log(
+          "Sinkronisasi Public Key ke Supabase sukses untuk:",
+          myCanonId,
+        );
+      }
     };
 
     initE2EE();
-  }, [myProfile.uniqueId]);
+  }, [myProfile.uniqueId]); // Akan langsung jalan begitu profil user termuat
 
   // === E2EE LOGIC ===
   // Ambil Public Key Penerima saat ganti chat aktif
