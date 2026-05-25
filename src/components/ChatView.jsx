@@ -1039,7 +1039,7 @@ const ChatView = () => {
 
     // Batasi ukuran file maksimal 2MB biar database Supabase dan memori HP gak jebol
     if (file.size > 2 * 1024 * 1024) {
-      alert("Ukuran foto terlalu besar! Maksimal 2MB, bro.");
+      alert("Ukuran foto terlalu besar! Maksimal 2MB.");
       e.target.value = ""; // Reset inputan file
       return;
     }
