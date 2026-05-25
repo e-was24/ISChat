@@ -546,15 +546,13 @@ const ChatView = () => {
   }, [messages]);
 
   // ====================================================================
-  // 1. BLOK INISIALISASI KUNCI USER (VERSI AMAN COCOK UNTUK AES+RSA HYBRID)
+  // 1. BLOK INISIALISASI KUNCI USER (VERSI FIX HYBRID AMAN)
   // ====================================================================
   useEffect(() => {
     const initE2EE = async () => {
-      // AMANKAN KUNCI DI BROWSER DULUAN (Bahkan sebelum nomor HP selesai di-load)
       let privKey = localStorage.getItem("ischat_private_key");
       let pubKey = localStorage.getItem("ischat_public_key");
 
-      // JIKA BENAR-BENAR KOSONG, BARU BOLEH GENERATE (Hanya sekali seumur hidup browser)
       if (!privKey || !pubKey) {
         console.log("Memicu generate E2EE Key Pair PERTAMA KALI...");
         try {
@@ -571,10 +569,8 @@ const ChatView = () => {
         }
       }
 
-      // Pasang kunci privat ke state untuk proses dekripsi Blok 3
       setMyPrivateKey(privKey);
 
-      // SINKRON KE SUPABASE: Tunggu sampai uniqueId/Nomor HP beneran siap
       if (myProfile.uniqueId && myProfile.uniqueId.trim() !== "") {
         const myCanonId = canonicalPhone(myProfile.uniqueId);
 
@@ -584,7 +580,7 @@ const ChatView = () => {
         );
         await supabase.from("user_keys").upsert({
           phone_id: myCanonId,
-          public_key: pubKey, // Selalu unggah public key yang COCOK dengan private key di atas
+          public_key: pubKey,
           username: myProfile.name || "User " + myCanonId.slice(-4),
           updated_at: new Date().toISOString(),
         });
@@ -592,7 +588,7 @@ const ChatView = () => {
     };
 
     initE2EE();
-  }, [myProfile.uniqueId]); // Tetap pantau uniqueId hanya untuk kebutuhan upload ke tabel user_keys
+  }, [myProfile.uniqueId]);
 
   // ====================================================================
   // 2. BLOK MENGAMBIL KUNCI PENERIMA CHAT AKTIF
@@ -608,7 +604,7 @@ const ChatView = () => {
         .from("user_keys")
         .select("public_key")
         .eq("phone_id", targetId)
-        .single();
+        .maybeSingle(); // Menggunakan maybeSingle agar lebih aman dibanding .single()
 
       if (data && data.public_key) {
         setActivePublicKey(data.public_key);
@@ -621,7 +617,7 @@ const ChatView = () => {
   }, [activeContactId]);
 
   // ====================================================================
-  // 3. BLOK DEKRIPSI SEMUA PESAN (VERSI FIX ANTI-LOOP)
+  // 3. BLOK DEKRIPSI SEMUA PESAN (VERSI FIX HYBRID DATA PARSING ANTI-STUCK)
   // ====================================================================
   useEffect(() => {
     const decryptAll = async () => {
@@ -631,10 +627,33 @@ const ChatView = () => {
       let updated = false;
 
       for (const msg of messages) {
+        // Hanya proses jika belum pernah didekripsi sebelumnya
         if (newDecrypted[msg.id] === undefined) {
-          if (msg.text && msg.text.startsWith('{"encryptedText"')) {
-            newDecrypted[msg.id] = await decryptMessage(msg.text, myPrivateKey);
+          if (
+            msg.text &&
+            (msg.text.startsWith('{"encryptedText"') ||
+              msg.text.startsWith('{"encryptedKey"'))
+          ) {
+            try {
+              // Jalankan dekripsi memakai fungsi crypto utama kamu
+              const decryptedText = await decryptMessage(
+                msg.text,
+                myPrivateKey,
+              );
+
+              if (decryptedText) {
+                newDecrypted[msg.id] = decryptedText;
+              } else {
+                newDecrypted[msg.id] = "⚠️ Gagal membaca muatan pesan aman.";
+              }
+            } catch (err) {
+              console.error(`Gagal mendekripsi pesan ID ${msg.id}:`, err);
+              // Fallback aman: Beri tanda agar loop tidak mencoba mendekripsi pesan corrupt ini terus-menerus
+              newDecrypted[msg.id] =
+                "🔒 Pesan terenkripsi (Kunci tidak cocok/Lama)";
+            }
           } else {
+            // Jika pesan teks biasa (plain text), langsung tampilkan apa adanya
             newDecrypted[msg.id] = msg.text;
           }
           updated = true;
@@ -650,7 +669,7 @@ const ChatView = () => {
   }, [messages, myPrivateKey]);
 
   // ====================================================================
-  // 4. REALTIME LOGIC (PRESENCE & LIVE REALTIME PROFILE AUTO-UPDATE)
+  // 4. REALTIME LOGIC (PRESENCE & MESSAGES LOGIC)
   // ====================================================================
   useEffect(() => {
     if (!myProfile.uniqueId) return;
@@ -674,7 +693,6 @@ const ChatView = () => {
     };
     fetchMessages();
 
-    // Urutan pendaftaran .on dulu baru .subscribe (ANTI-CRASH)
     const presenceChannel = supabase.channel("online-presence", {
       config: { presence: { key: cleanPhone(myProfile.uniqueId) } },
     });
@@ -715,7 +733,6 @@ const ChatView = () => {
               if (rxId === myId) {
                 const targetQueryId = canonicalPhone(txId);
 
-                // Tarik profil paling update milik pengirim dari cloud secara live
                 const { data: cloudProf } = await supabase
                   .from("profiles")
                   .select("name, avatar")
@@ -758,10 +775,19 @@ const ChatView = () => {
                   }
                 });
 
+                // Realtime Notification Dekripsi dengan penanganan error
                 let notifBody = newMsg.text;
-                if (newMsg.text.startsWith('{"encryptedText"')) {
-                  const privKey = localStorage.getItem("ischat_private_key");
-                  notifBody = await decryptMessage(newMsg.text, privKey);
+                if (
+                  newMsg.text &&
+                  (newMsg.text.startsWith('{"encryptedText"') ||
+                    newMsg.text.startsWith('{"encryptedKey"'))
+                ) {
+                  try {
+                    const privKey = localStorage.getItem("ischat_private_key");
+                    notifBody = await decryptMessage(newMsg.text, privKey);
+                  } catch (e) {
+                    notifBody = "🔒 Pesan Terenkripsi Baru";
+                  }
                 }
 
                 if (
