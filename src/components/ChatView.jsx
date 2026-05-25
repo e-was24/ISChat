@@ -173,19 +173,24 @@ const ChatView = () => {
   }, [messages]);
 
   // ====================================================================
-  // 1. BLOK INISIALISASI KUNCI USER (Gunakan yang versi Auto-Repair ini)
+  // 1. BLOK INISIALISASI KUNCI USER (VERSI FIX ANTI-REFRESH / RESET)
   // ====================================================================
   useEffect(() => {
     const initE2EE = async () => {
-      if (!myProfile.uniqueId) return;
+      // Proteksi 1: Jika nomor HP belum termuat dari local DB (masih kosong), JANGAN LANJUT!
+      if (!myProfile.uniqueId || myProfile.uniqueId.trim() === "") return;
+
       const myCanonId = canonicalPhone(myProfile.uniqueId);
 
       let privKey = localStorage.getItem("ischat_private_key");
       let pubKey = localStorage.getItem("ischat_public_key");
 
-      // Jika di browser belum ada kunci, buat baru secara otomatis (Auto-Fix User Lama)
+      // Proteksi 2: Benar-benar cek apakah kunci kosong di browser sebelum bikin baru
       if (!privKey || !pubKey) {
-        console.log("Memicu auto-restart E2EE untuk nomor lama...");
+        console.log(
+          "Memicu generate E2EE Key Pair pertama kali untuk nomor:",
+          myCanonId,
+        );
         try {
           const keys = await generateKeyPair();
           privKey = keys.privateKey;
@@ -193,27 +198,40 @@ const ChatView = () => {
 
           localStorage.setItem("ischat_private_key", privKey);
           localStorage.setItem("ischat_public_key", pubKey);
+          console.log(
+            "Key pair baru sukses disimpan secara permanen di browser.",
+          );
         } catch (cryptoError) {
           console.error("Gagal auto-generate key:", cryptoError);
           return;
         }
+      } else {
+        console.log(
+          "Kunci lama ditemukan di browser. Menggunakan kunci yang sudah ada (Anti-Reset teraktifkan).",
+        );
       }
 
       setMyPrivateKey(privKey);
 
-      // Daftarkan atau perbarui key di database Supabase (Upsert)
-      // Ini memastikan nomor lama otomatis masuk ke tabel user_keys tanpa mengubah nomornya
-      await supabase.from("user_keys").upsert({
+      // Selalu sinkronisasikan public key ke database Supabase agar user lain bisa mengambilnya
+      const { error } = await supabase.from("user_keys").upsert({
         phone_id: myCanonId,
         public_key: pubKey,
         updated_at: new Date().toISOString(),
       });
 
-      console.log("Auto-sync E2EE sukses untuk nomor:", myCanonId);
+      if (error) {
+        console.error("Gagal sinkronisasi public key ke Supabase:", error);
+      } else {
+        console.log(
+          "Auto-sync public key ke Supabase sukses untuk:",
+          myCanonId,
+        );
+      }
     };
 
     initE2EE();
-  }, [myProfile.uniqueId]);
+  }, [myProfile.uniqueId]); // Hanya terpicu ketika uniqueId sukses termuat ke aplikasi
 
   // ====================================================================
   // 2. BLOK MENGAMBIL KUNCI PENERIMA (Biarkan tetap seperti ini)
@@ -272,7 +290,7 @@ const ChatView = () => {
     };
 
     decryptAll();
-  }, [messages, myPrivateKey]);
+  }, [messages, myPrivateKey, decryptedMessages]);
 
   // Presence & Messages logic
   useEffect(() => {
