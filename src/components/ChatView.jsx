@@ -269,13 +269,13 @@ const ChatView = () => {
   }, [messages, myPrivateKey]);
 
   // ====================================================================
-  // 4. REALTIME LOGIC (PRESENCE & MESSAGES + AUTO UPDATE PROFIL LAWAN CHAT)
+  // 4. REALTIME LOGIC (PRESENCE & MESSAGES + AUTO UPDATE PROFIL FIX 100%)
   // ====================================================================
   useEffect(() => {
     if (!myProfile.uniqueId) return;
     const myCanonId = canonicalPhone(myProfile.uniqueId);
 
-    // Initial Fetch riwayat chat
+    // Initial Fetch riwayat chat awal
     const fetchMessages = async () => {
       const { data } = await supabase
         .from("messages")
@@ -294,18 +294,16 @@ const ChatView = () => {
     };
     fetchMessages();
 
-    // === PRESENCE CHANNEL (URUTAN FIX: .on DULU BARU .subscribe) ===
+    // === PRESENCE CHANNEL FIX: .on DULUAN, .subscribe DI PALING BAWAH ===
     const presenceChannel = supabase.channel("online-presence", {
       config: { presence: { key: cleanPhone(myProfile.uniqueId) } },
     });
 
-    // 1. Amankan callback '.on' di posisi pertama (PENTING!)
     presenceChannel
       .on("presence", { event: "sync" }, () => {
         const newState = presenceChannel.presenceState();
         setOnlineUsers(newState);
       })
-      // 2. Fungsi '.subscribe()' WAJIB ditaruh di paling akhir setelah '.on'
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           await presenceChannel.track({
@@ -336,13 +334,15 @@ const ChatView = () => {
               );
 
               if (rxId === myId) {
-                // === FITUR AUTO-UPDATE PROFIL DI HP USER LAIN ===
-                // Tarik profil terbaru si pengirim dari tabel profiles cloud
+                // === FIX ERROR 406: Gunakan format id yang bersih untuk query Supabase ===
+                // Kita gunakan target ID yang sudah distandarkan
+                const targetQueryId = canonicalPhone(txId);
+
                 const { data: cloudProf } = await supabase
                   .from("profiles")
                   .select("name, avatar")
-                  .eq("id", txId)
-                  .single();
+                  .eq("id", targetQueryId) // Query aman tanpa tanda aneh
+                  .maybeSingle(); // Menggunakan maybeSingle agar tidak crash jika profil belum ada
 
                 setContacts((prev) => {
                   const txIdClean = cleanPhone(txId);
@@ -350,7 +350,6 @@ const ChatView = () => {
                     (c) => cleanPhone(c.id) === txIdClean,
                   );
 
-                  // Ambil data profil terbaru dari cloud, jika tidak ada pakai data lama/default
                   const liveName =
                     cloudProf?.name ||
                     (existing ? existing.name : formatPhoneInput(txId));
@@ -368,7 +367,6 @@ const ChatView = () => {
                       },
                     ];
                   } else {
-                    // Jika kontak sudah ada, ganti nama dan fotonya secara otomatis dengan data cloud terbaru!
                     return prev.map((c) =>
                       cleanPhone(c.id) === txIdClean
                         ? {
