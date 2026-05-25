@@ -306,9 +306,15 @@ const ChatView = () => {
               );
 
               if (rxId === myId) {
+                // === PERBAIKAN DI SINI: Mencegah Duplikat Kontak ===
                 setContacts((prev) => {
-                  const existing = prev.find((c) => cleanPhone(c.id) === txId);
+                  const txIdClean = cleanPhone(txId);
+                  const existing = prev.find(
+                    (c) => cleanPhone(c.id) === txIdClean,
+                  );
+
                   if (!existing) {
+                    // Hanya tambah bubble baru kalau kontak benar-benar belum terdaftar
                     return [
                       ...prev,
                       {
@@ -318,14 +324,14 @@ const ChatView = () => {
                         status: "Sedang Chat",
                       },
                     ];
-                  } else if (existing.status === "Baru ditambahkan") {
+                  } else {
+                    // Kalau nomornya sudah ada di daftar, perbarui statusnya saja
                     return prev.map((c) =>
-                      cleanPhone(c.id) === txId
+                      cleanPhone(c.id) === txIdClean
                         ? { ...c, status: "Sedang Chat" }
                         : c,
                     );
                   }
-                  return prev;
                 });
 
                 // === E2EE LOGIC ===
