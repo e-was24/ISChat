@@ -417,12 +417,14 @@ const ChatView = () => {
     };
   }, [myProfile.uniqueId]);
 
-  // Presence & Messages logic
+  // ====================================================================
+  // 4. REALTIME LOGIC (PRESENCE & MESSAGES + AUTO UPDATE PROFIL LAWAN CHAT)
+  // ====================================================================
   useEffect(() => {
     if (!myProfile.uniqueId) return;
     const myCanonId = canonicalPhone(myProfile.uniqueId);
 
-    // Initial Fetch & Merge
+    // Initial Fetch riwayat chat awal
     const fetchMessages = async () => {
       const { data } = await supabase
         .from("messages")
@@ -441,16 +443,18 @@ const ChatView = () => {
     };
     fetchMessages();
 
-    // Presence Channel
+    // === PERBAIKAN PRESENCE CHANNEL (URUTAN YANG BENAR & ANTI-CRASH) ===
     const presenceChannel = supabase.channel("online-presence", {
       config: { presence: { key: cleanPhone(myProfile.uniqueId) } },
     });
 
+    // 1. Daftarkan callback '.on' TERLEBIH DAHULU
     presenceChannel
       .on("presence", { event: "sync" }, () => {
         const newState = presenceChannel.presenceState();
         setOnlineUsers(newState);
       })
+      // 2. Baru panggil '.subscribe()' di PALING AKHIR setelah mendaftar callback
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           await presenceChannel.track({
@@ -461,7 +465,7 @@ const ChatView = () => {
         }
       });
 
-    // Messages Channel
+    // Messages Channel + Live Profile Sync
     const msgChannel = supabase
       .channel("db-changes")
       .on(
@@ -481,36 +485,53 @@ const ChatView = () => {
               );
 
               if (rxId === myId) {
-                // === PERBAIKAN DI SINI: Mencegah Duplikat Kontak ===
+                // === FITUR AUTO-UPDATE PROFIL DI HP USER LAIN ===
+                // Tarik profil terbaru si pengirim dari tabel profiles cloud
+                const { data: cloudProf } = await supabase
+                  .from("profiles")
+                  .select("name, avatar")
+                  .eq("id", txId)
+                  .single();
+
                 setContacts((prev) => {
                   const txIdClean = cleanPhone(txId);
                   const existing = prev.find(
                     (c) => cleanPhone(c.id) === txIdClean,
                   );
 
+                  // Ambil data profil terbaru dari cloud, jika tidak ada pakai data lama/default
+                  const liveName =
+                    cloudProf?.name ||
+                    (existing ? existing.name : formatPhoneInput(txId));
+                  const liveAvatar =
+                    cloudProf?.avatar || (existing ? existing.avatar : "?");
+
                   if (!existing) {
-                    // Hanya tambah bubble baru kalau kontak benar-benar belum terdaftar
                     return [
                       ...prev,
                       {
-                        id: canonicalPhone(newMsg.sender_id),
-                        name: formatPhoneInput(newMsg.sender_id),
-                        avatar: "?",
+                        id: txId,
+                        name: liveName,
+                        avatar: liveAvatar,
                         status: "Sedang Chat",
                       },
                     ];
                   } else {
-                    // Kalau nomornya sudah ada di daftar, perbarui statusnya saja
+                    // Jika kontak sudah ada, ganti nama dan fotonya secara otomatis dengan data cloud terbaru!
                     return prev.map((c) =>
                       cleanPhone(c.id) === txIdClean
-                        ? { ...c, status: "Sedang Chat" }
+                        ? {
+                            ...c,
+                            name: liveName,
+                            avatar: liveAvatar,
+                            status: "Sedang Chat",
+                          }
                         : c,
                     );
                   }
                 });
 
-                // === E2EE LOGIC ===
-                // Dekripsi teks realtime untuk push notification
+                // E2EE Push Notification Text Dekripsi
                 let notifBody = newMsg.text;
                 if (newMsg.text.startsWith('{"encryptedText"')) {
                   const privKey = localStorage.getItem("ischat_private_key");
