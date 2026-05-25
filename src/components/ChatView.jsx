@@ -71,7 +71,7 @@ const ChatView = () => {
     },
   ];
 
-  const currentVersion = "1.6.5";
+  const currentVersion = "1.6.6";
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -294,16 +294,18 @@ const ChatView = () => {
     };
     fetchMessages();
 
-    // Presence Channel
+    // === PRESENCE CHANNEL (URUTAN FIX: .on DULU BARU .subscribe) ===
     const presenceChannel = supabase.channel("online-presence", {
       config: { presence: { key: cleanPhone(myProfile.uniqueId) } },
     });
 
+    // 1. Amankan callback '.on' di posisi pertama (PENTING!)
     presenceChannel
       .on("presence", { event: "sync" }, () => {
         const newState = presenceChannel.presenceState();
         setOnlineUsers(newState);
       })
+      // 2. Fungsi '.subscribe()' WAJIB ditaruh di paling akhir setelah '.on'
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           await presenceChannel.track({
@@ -902,7 +904,7 @@ const ChatView = () => {
             className="version-btn"
             onClick={() => setShowVersionModal(true)}
           >
-            <InfoIcon className="sidebar-icon" /> <span>v1.6.5</span>
+            <InfoIcon className="sidebar-icon" /> <span>v{currentVersion}</span>
           </button>
           <button className="settings-btn">
             <SettingsIcon className="sidebar-icon" />
