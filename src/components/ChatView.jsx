@@ -382,7 +382,7 @@ const ChatView = () => {
     },
   ];
 
-  const currentVersion = "1.7.2";
+  const currentVersion = "1.7.2.1";
 
   // Force cache clear on version mismatch
   useEffect(() => {
@@ -546,21 +546,17 @@ const ChatView = () => {
   }, [messages]);
 
   // ====================================================================
-  // 1. BLOK INISIALISASI KUNCI USER (VERSI AMAN ANTI-RESET)
+  // 1. BLOK INISIALISASI KUNCI USER (VERSI AMAN COCOK UNTUK AES+RSA HYBRID)
   // ====================================================================
   useEffect(() => {
     const initE2EE = async () => {
-      if (!myProfile.uniqueId || myProfile.uniqueId.trim() === "") return;
-
-      const myCanonId = canonicalPhone(myProfile.uniqueId);
+      // AMANKAN KUNCI DI BROWSER DULUAN (Bahkan sebelum nomor HP selesai di-load)
       let privKey = localStorage.getItem("ischat_private_key");
       let pubKey = localStorage.getItem("ischat_public_key");
 
+      // JIKA BENAR-BENAR KOSONG, BARU BOLEH GENERATE (Hanya sekali seumur hidup browser)
       if (!privKey || !pubKey) {
-        console.log(
-          "Memicu generate E2EE Key Pair pertama kali untuk nomor:",
-          myCanonId,
-        );
+        console.log("Memicu generate E2EE Key Pair PERTAMA KALI...");
         try {
           const keys = await generateKeyPair();
           privKey = keys.privateKey;
@@ -568,23 +564,34 @@ const ChatView = () => {
 
           localStorage.setItem("ischat_private_key", privKey);
           localStorage.setItem("ischat_public_key", pubKey);
+          console.log("Kunci baru sukses dikunci di browser.");
         } catch (cryptoError) {
-          console.error("Gagal auto-generate key:", cryptoError);
+          console.error("Gagal auto-generate key RSA:", cryptoError);
           return;
         }
       }
 
+      // Pasang kunci privat ke state untuk proses dekripsi Blok 3
       setMyPrivateKey(privKey);
 
-      await supabase.from("user_keys").upsert({
-        phone_id: myCanonId,
-        public_key: pubKey,
-        updated_at: new Date().toISOString(),
-      });
+      // SINKRON KE SUPABASE: Tunggu sampai uniqueId/Nomor HP beneran siap
+      if (myProfile.uniqueId && myProfile.uniqueId.trim() !== "") {
+        const myCanonId = canonicalPhone(myProfile.uniqueId);
+
+        console.log(
+          "Menyelaraskan Public Key RSA ke cloud untuk nomor:",
+          myCanonId,
+        );
+        await supabase.from("user_keys").upsert({
+          phone_id: myCanonId,
+          public_key: pubKey, // Selalu unggah public key yang COCOK dengan private key di atas
+          updated_at: new Date().toISOString(),
+        });
+      }
     };
 
     initE2EE();
-  }, [myProfile.uniqueId]);
+  }, [myProfile.uniqueId]); // Tetap pantau uniqueId hanya untuk kebutuhan upload ke tabel user_keys
 
   // ====================================================================
   // 2. BLOK MENGAMBIL KUNCI PENERIMA CHAT AKTIF
