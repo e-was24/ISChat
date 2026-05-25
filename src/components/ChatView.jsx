@@ -140,65 +140,52 @@ const ChatView = () => {
     db.saveMessages(messages);
   }, [messages]);
 
-  // === E2EE LOGIC ===
-  // Inisialisasi Key Pair untuk User Sendiri (User Baru & User Lama)
+  // ====================================================================
+  // 1. BLOK INISIALISASI KUNCI USER (Gunakan yang versi Auto-Repair ini)
+  // ====================================================================
   useEffect(() => {
     const initE2EE = async () => {
-      // 1. Pastikan uniqueId user sudah ke-load dari local DB
       if (!myProfile.uniqueId) return;
       const myCanonId = canonicalPhone(myProfile.uniqueId);
 
-      // 2. Cek apakah user lama ini sudah punya kunci di browsernya atau belum
       let privKey = localStorage.getItem("ischat_private_key");
       let pubKey = localStorage.getItem("ischat_public_key");
 
-      // 3. JIKA BELUM ADA (Kasus User Lama setelah Update), OTOMATIS GENERATE DI SINI
+      // Jika di browser belum ada kunci, buat baru secara otomatis (Auto-Fix User Lama)
       if (!privKey || !pubKey) {
-        console.log(
-          "User lama terdeteksi belum punya E2EE. Men-generate key pair baru...",
-        );
+        console.log("Memicu auto-restart E2EE untuk nomor lama...");
         try {
           const keys = await generateKeyPair();
           privKey = keys.privateKey;
           pubKey = keys.publicKey;
 
-          // Simpan di browser user agar tidak hilang saat reload
           localStorage.setItem("ischat_private_key", privKey);
           localStorage.setItem("ischat_public_key", pubKey);
-          console.log("Key pair baru berhasil disimpan di LocalStorage.");
         } catch (cryptoError) {
-          console.error(
-            "Gagal generate key pair secara otomatis:",
-            cryptoError,
-          );
+          console.error("Gagal auto-generate key:", cryptoError);
           return;
         }
       }
 
       setMyPrivateKey(privKey);
 
-      // 4. Selalu pastikan Public Key ter-upload / ter-update di Supabase user_keys
-      const { error } = await supabase.from("user_keys").upsert({
+      // Daftarkan atau perbarui key di database Supabase (Upsert)
+      // Ini memastikan nomor lama otomatis masuk ke tabel user_keys tanpa mengubah nomornya
+      await supabase.from("user_keys").upsert({
         phone_id: myCanonId,
         public_key: pubKey,
         updated_at: new Date().toISOString(),
       });
 
-      if (error) {
-        console.error("Gagal sinkronisasi public key ke Supabase:", error);
-      } else {
-        console.log(
-          "Sinkronisasi Public Key ke Supabase sukses untuk:",
-          myCanonId,
-        );
-      }
+      console.log("Auto-sync E2EE sukses untuk nomor:", myCanonId);
     };
 
     initE2EE();
-  }, [myProfile.uniqueId]); // Akan langsung jalan begitu profil user termuat
+  }, [myProfile.uniqueId]);
 
-  // === E2EE LOGIC ===
-  // Ambil Public Key Penerima saat ganti chat aktif
+  // ====================================================================
+  // 2. BLOK MENGAMBIL KUNCI PENERIMA (Biarkan tetap seperti ini)
+  // ====================================================================
   useEffect(() => {
     const fetchReceiverKey = async () => {
       if (!activeContactId) {
@@ -225,8 +212,9 @@ const ChatView = () => {
     fetchReceiverKey();
   }, [activeContactId]);
 
-  // === E2EE LOGIC ===
-  // Fungsi penolong untuk mendekripsi tumpukan pesan secara asinkron
+  // ====================================================================
+  // 3. BLOK DEKRIPSI SEMUA PESAN (Biarkan tetap seperti ini)
+  // ====================================================================
   useEffect(() => {
     const decryptAll = async () => {
       if (!myPrivateKey || messages.length === 0) return;
@@ -236,7 +224,7 @@ const ChatView = () => {
 
       for (const msg of messages) {
         if (!newDecrypted[msg.id]) {
-          // Jika pesan berupa JSON terenkripsi, dekripsi. Jika teks biasa (pesan lama), biarkan lolos.
+          // Jika pesan berupa JSON terenkripsi, dekripsi. Jika teks biasa, biarkan lolos.
           if (msg.text.startsWith('{"encryptedText"')) {
             newDecrypted[msg.id] = await decryptMessage(msg.text, myPrivateKey);
           } else {
